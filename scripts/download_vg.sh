@@ -32,3 +32,5 @@ unzip $VG_DIR/relationships.json.zip -d $VG_DIR
 unzip $VG_DIR/image_data.json.zip -d $VG_DIR
 unzip $VG_DIR/images.zip -d $VG_DIR/images
 unzip $VG_DIR/images2.zip -d $VG_DIR/images
+
+python scripts/preprocess_vg.py

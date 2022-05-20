@@ -73,7 +73,7 @@ class VgSceneGraphDataset(Dataset):
     - triples: LongTensor of shape (T, 3) where triples[t] = [i, p, j]
       means that (objs[i], p, objs[j]) is a triple.
     """
-    img_path = os.path.join(self.image_dir, self.image_paths[index])
+    img_path = os.path.join(self.image_dir, self.image_paths[index].decode('utf-8'))
 
     with open(img_path, 'rb') as f:
       with PIL.Image.open(f) as image:

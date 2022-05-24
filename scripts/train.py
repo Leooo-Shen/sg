@@ -61,11 +61,12 @@ parser.add_argument('--learning_rate', default=1e-4, type=float)
 parser.add_argument('--eval_mode_after', default=100000, type=int)
 
 # Dataset options common to both VG and COCO
+# TODO: modify here for other generation options 
 parser.add_argument('--image_size', default='64,64', type=int_tuple)
 parser.add_argument('--num_train_samples', default=None, type=int)
 parser.add_argument('--num_val_samples', default=1024, type=int)
 parser.add_argument('--shuffle_val', default=True, type=bool_flag)
-parser.add_argument('--loader_num_workers', default=4, type=int)
+parser.add_argument('--loader_num_workers', default=8, type=int)
 parser.add_argument('--include_relationships', default=True, type=bool_flag)
 
 # VG-specific options
@@ -426,7 +427,7 @@ def main(args):
   vocab, train_loader, val_loader = build_loaders(args)
   model, model_kwargs = build_model(args, vocab)
   model.type(float_dtype)
-  print(model)
+  print(model)  ## Sg2ImModel
 
   optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
@@ -437,17 +438,18 @@ def main(args):
   if obj_discriminator is not None:
     obj_discriminator.type(float_dtype)
     obj_discriminator.train()
-    print(obj_discriminator)
+    # print(obj_discriminator)
     optimizer_d_obj = torch.optim.Adam(obj_discriminator.parameters(),
                                        lr=args.learning_rate)
 
   if img_discriminator is not None:
     img_discriminator.type(float_dtype)
     img_discriminator.train()
-    print(img_discriminator)
+    # print(img_discriminator)
     optimizer_d_img = torch.optim.Adam(img_discriminator.parameters(),
                                        lr=args.learning_rate)
 
+  ## restore from checkpoints
   restore_path = None
   if args.restore_from_checkpoint:
     restore_path = '%s_with_model.pt' % args.checkpoint_name
@@ -504,6 +506,7 @@ def main(args):
       'best_t': [],
     }
 
+  ## training
   while True:
     if t >= args.num_iterations:
       break
@@ -511,12 +514,16 @@ def main(args):
     print('Starting epoch %d' % epoch)
     
     for batch in train_loader:
+      
       if t == args.eval_mode_after:
         print('switching to eval mode')
         model.eval()
         optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+        
       t += 1
       batch = [tensor.cuda() for tensor in batch]
+      
+      ## for some settings, we could use GT masks
       masks = None
       if len(batch) == 6:
         imgs, objs, boxes, triples, obj_to_img, triple_to_img = batch
@@ -526,12 +533,15 @@ def main(args):
         assert False
       predicates = triples[:, 1]
 
+      ## model forward
       with timeit('forward', args.timing):
         model_boxes = boxes
-        model_masks = masks
+        model_masks = masks  ## if provided, else None
         model_out = model(objs, triples, obj_to_img,
                           boxes_gt=model_boxes, masks_gt=model_masks)
         imgs_pred, boxes_pred, masks_pred, predicate_scores = model_out
+      
+      ## get losses
       with timeit('loss', args.timing):
         # Skip the pixel loss if using GT boxes
         skip_pixel_loss = (model_boxes is None)
@@ -540,6 +550,7 @@ def main(args):
                                 boxes, boxes_pred, masks, masks_pred,
                                 predicates, predicate_scores)
 
+      ## object discriminator loss
       if obj_discriminator is not None:
         scores_fake, ac_loss = obj_discriminator(imgs_pred, objs, boxes, obj_to_img)
         total_loss = add_loss(total_loss, ac_loss, losses, 'ac_loss',
@@ -548,6 +559,7 @@ def main(args):
         total_loss = add_loss(total_loss, gan_g_loss(scores_fake), losses,
                               'g_gan_obj_loss', weight)
 
+      ## image discriminator loss
       if img_discriminator is not None:
         scores_fake = img_discriminator(imgs_pred)
         weight = args.discriminator_loss_weight * args.d_img_weight
@@ -559,6 +571,7 @@ def main(args):
         print('WARNING: Got loss = NaN, not backpropping')
         continue
 
+      ## backward
       optimizer.zero_grad()
       with timeit('backward', args.timing):
         total_loss.backward()
@@ -568,6 +581,7 @@ def main(args):
       ac_loss_fake = None
       d_losses = {}
       
+      ## train object discriminator
       if obj_discriminator is not None:
         d_obj_losses = LossManager()
         imgs_fake = imgs_pred.detach()
@@ -583,6 +597,7 @@ def main(args):
         d_obj_losses.total_loss.backward()
         optimizer_d_obj.step()
 
+      ## train image discriminator
       if img_discriminator is not None:
         d_img_losses = LossManager()
         imgs_fake = imgs_pred.detach()
@@ -596,6 +611,7 @@ def main(args):
         d_img_losses.total_loss.backward()
         optimizer_d_img.step()
 
+      ## output printings
       if t % args.print_every == 0:
         print('t = %d / %d' % (t, args.num_iterations))
         for name, val in losses.items():
@@ -613,6 +629,7 @@ def main(args):
             print(' D_img [%s]: %.4f' % (name, val))
             checkpoint['d_losses'][name].append(val)
       
+      ## save checkpoints
       if t % args.checkpoint_every == 0:
         print('checking on train')
         train_results = check_model(args, t, train_loader, model)

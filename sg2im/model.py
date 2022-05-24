@@ -44,12 +44,17 @@ class Sg2ImModel(nn.Module):
     self.vocab = vocab
     self.image_size = image_size
     self.layout_noise_dim = layout_noise_dim
+    # print(self.vocab.keys()) 
+    # dict_keys(['object_name_to_idx', 'object_idx_to_name', 'attribute_name_to_idx', 'attribute_idx_to_name', 'pred_name_to_idx', 'pred_idx_to_name'])
 
     num_objs = len(vocab['object_idx_to_name'])
     num_preds = len(vocab['pred_idx_to_name'])
+    
+    ## embedding layers
     self.obj_embeddings = nn.Embedding(num_objs + 1, embedding_dim)
     self.pred_embeddings = nn.Embedding(num_preds, embedding_dim)
 
+    ## construct GCN
     if gconv_num_layers == 0:
       self.gconv = nn.Linear(embedding_dim, gconv_dim)
     elif gconv_num_layers > 0:
@@ -73,10 +78,12 @@ class Sg2ImModel(nn.Module):
       }
       self.gconv_net = GraphTripleConvNet(**gconv_kwargs)
 
+    ## box_net predicts bounding boxes from object vectors after GCN
     box_net_dim = 4
     box_net_layers = [gconv_dim, gconv_hidden_dim, box_net_dim]
     self.box_net = build_mlp(box_net_layers, batch_norm=mlp_normalization)
 
+    ## mask_net predicts soft segmentation masks from object vectors after GCN
     self.mask_net = None
     if mask_size is not None and mask_size > 0:
       self.mask_net = self._build_mask_net(num_objs, gconv_dim, mask_size)
@@ -84,6 +91,7 @@ class Sg2ImModel(nn.Module):
     rel_aux_layers = [2 * embedding_dim + 8, gconv_hidden_dim, num_preds]
     self.rel_aux_net = build_mlp(rel_aux_layers, batch_norm=mlp_normalization)
 
+    ## refinement_net generates images from scene_layout and noise
     refinement_kwargs = {
       'dims': (gconv_dim + layout_noise_dim,) + refinement_dims,
       'normalization': normalization,
@@ -120,6 +128,7 @@ class Sg2ImModel(nn.Module):
     - boxes_gt: FloatTensor of shape (O, 4) giving boxes to use for computing
       the spatial layout; if not given then use predicted boxes.
     """
+
     O, T = objs.size(0), triples.size(0)
     s, p, o = triples.chunk(3, dim=1)           # All have shape (T, 1)
     s, p, o = [x.squeeze(1) for x in [s, p, o]] # Now have shape (T,)
@@ -128,19 +137,28 @@ class Sg2ImModel(nn.Module):
     if obj_to_img is None:
       obj_to_img = torch.zeros(O, dtype=objs.dtype, device=objs.device)
 
-    obj_vecs = self.obj_embeddings(objs)
+    # --------------------------------------------------------------
+    # TODO: use CLIP to get image features from object names, 
+    # then try to merge it with embeddings
+    # --------------------------------------------------------------
+    
+    ## get object embeddings
+    obj_vecs = self.obj_embeddings(objs)  # torch.Size([O, 128])
     obj_vecs_orig = obj_vecs
     pred_vecs = self.pred_embeddings(p)
-
+    
+    ## GCN calculation
     if isinstance(self.gconv, nn.Linear):
       obj_vecs = self.gconv(obj_vecs)
     else:
       obj_vecs, pred_vecs = self.gconv(obj_vecs, pred_vecs, edges)
     if self.gconv_net is not None:
       obj_vecs, pred_vecs = self.gconv_net(obj_vecs, pred_vecs, edges)
-
+    
+    ## use object vectors to predict bounding boxes
     boxes_pred = self.box_net(obj_vecs)
 
+    ## use object vectors to predict segmentation masks
     masks_pred = None
     if self.mask_net is not None:
       mask_scores = self.mask_net(obj_vecs.view(O, -1, 1, 1))

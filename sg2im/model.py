@@ -25,6 +25,8 @@ from sg2im.crn import RefinementNetwork
 from sg2im.layout import boxes_to_layout, masks_to_layout
 from sg2im.layers import build_mlp
 
+import clip
+
 
 class Sg2ImModel(nn.Module):
   def __init__(self, vocab, image_size=(64, 64), embedding_dim=64,
@@ -113,8 +115,9 @@ class Sg2ImModel(nn.Module):
     layers.append(nn.Conv2d(dim, output_dim, kernel_size=1))
     return nn.Sequential(*layers)
 
+  
   def forward(self, objs, triples, obj_to_img=None,
-              boxes_gt=None, masks_gt=None):
+              boxes_gt=None, masks_gt=None, clip_features=None):
     """
     Required Inputs:
     - objs: LongTensor of shape (O,) giving categories for all objects
@@ -138,14 +141,17 @@ class Sg2ImModel(nn.Module):
       obj_to_img = torch.zeros(O, dtype=objs.dtype, device=objs.device)
 
     # --------------------------------------------------------------
-    # TODO: use CLIP to get image features from object names, 
-    # then try to merge it with embeddings
+    # use CLIP features. Here directly replace original embeddings
     # --------------------------------------------------------------
-    
+
     ## get object embeddings
-    obj_vecs = self.obj_embeddings(objs)  # torch.Size([O, 128])
+    if clip_features is None:
+      obj_vecs = self.obj_embeddings(objs)  # torch.Size([len(objs), 512])
+    else:
+      obj_vecs = clip_features.float()
     obj_vecs_orig = obj_vecs
     pred_vecs = self.pred_embeddings(p)
+    
     
     ## GCN calculation
     if isinstance(self.gconv, nn.Linear):
@@ -248,4 +254,3 @@ class Sg2ImModel(nn.Module):
     """ Convenience method that combines encode_scene_graphs and forward. """
     objs, triples, obj_to_img = self.encode_scene_graphs(scene_graphs)
     return self.forward(objs, triples, obj_to_img)
-

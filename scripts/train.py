@@ -44,6 +44,8 @@ from sg2im.model import Sg2ImModel
 from sg2im.utils import int_tuple, float_tuple, str_tuple
 from sg2im.utils import timeit, bool_flag, LossManager
 
+import clip
+
 torch.backends.cudnn.benchmark = True
 
 VG_DIR = os.path.expanduser('datasets/vg')
@@ -99,7 +101,7 @@ parser.add_argument('--coco_stuff_only', default=True, type=bool_flag)
 
 # Generator options
 parser.add_argument('--mask_size', default=16, type=int) # Set this to 0 to use no masks
-parser.add_argument('--embedding_dim', default=128, type=int)
+parser.add_argument('--embedding_dim', default=512, type=int)
 parser.add_argument('--gconv_dim', default=128, type=int)
 parser.add_argument('--gconv_hidden_dim', default=512, type=int)
 parser.add_argument('--gconv_num_layers', default=5, type=int)
@@ -418,8 +420,15 @@ def calculate_model_losses(args, skip_pixel_loss, model, img, img_pred,
   return total_loss, losses
 
 
+def create_prompt(obj_name):
+  assert isinstance(obj_name, str)
+  return "A photo of a " + obj_name
+  
+  
 def main(args):
-  print(args)
+  # print(args)
+  device = "cuda" if torch.cuda.is_available() else "cpu"
+  
   check_args(args)
   float_dtype = torch.cuda.FloatTensor
   long_dtype = torch.cuda.LongTensor
@@ -427,14 +436,15 @@ def main(args):
   vocab, train_loader, val_loader = build_loaders(args)
   model, model_kwargs = build_model(args, vocab)
   model.type(float_dtype)
-  print(model)  ## Sg2ImModel
+  # print(model)  ## Sg2ImModel
 
   optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
   obj_discriminator, d_obj_kwargs = build_obj_discriminator(args, vocab)
   img_discriminator, d_img_kwargs = build_img_discriminator(args, vocab)
   gan_g_loss, gan_d_loss = get_gan_losses(args.gan_loss_type)
-
+  clip_model, _ = clip.load("ViT-B/32", device=device)
+      
   if obj_discriminator is not None:
     obj_discriminator.type(float_dtype)
     obj_discriminator.train()
@@ -532,13 +542,26 @@ def main(args):
       else:
         assert False
       predicates = triples[:, 1]
-
+      
+      ## TODO:
       ## model forward
       with timeit('forward', args.timing):
         model_boxes = boxes
-        model_masks = masks  ## if provided, else None
+        model_masks = masks 
+        prompt = []
+        
+        # print(vocab["object_idx_to_name"])
+
+        for obj_idx in objs.cpu().detach().numpy():
+          obj_name = vocab["object_idx_to_name"][obj_idx]
+          prompt.append(create_prompt(obj_name))
+          
+        text = clip.tokenize(prompt).to(objs.device)
+        with torch.no_grad():
+          clip_features = clip_model.encode_text(text)
+          
         model_out = model(objs, triples, obj_to_img,
-                          boxes_gt=model_boxes, masks_gt=model_masks)
+                          boxes_gt=model_boxes, masks_gt=model_masks, clip_features=clip_features)
         imgs_pred, boxes_pred, masks_pred, predicate_scores = model_out
       
       ## get losses

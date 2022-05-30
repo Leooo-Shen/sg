@@ -37,13 +37,14 @@ class VgSceneGraphDataset(Dataset):
 
     self.image_dir = image_dir
     self.image_size = image_size
-    self.vocab = vocab
+    self.vocab = vocab  # load the vocab.json file
     self.num_objects = len(vocab['object_idx_to_name'])
     self.use_orphaned_objects = use_orphaned_objects
     self.max_objects = max_objects
     self.max_samples = max_samples
     self.include_relationships = include_relationships
-
+    
+    
     transform = [Resize(image_size), T.ToTensor()]
     if normalize_images:
       transform.append(imagenet_preprocess())
@@ -107,7 +108,7 @@ class VgSceneGraphDataset(Dataset):
 
     boxes = torch.FloatTensor([[0, 0, 1, 1]]).repeat(O, 1)
     obj_idx_mapping = {}
-    for i, obj_idx in enumerate(obj_idxs):
+    for i, obj_idx in enumerate(obj_idxs):      
       objs[i] = self.data['object_names'][index, obj_idx].item()
       x, y, w, h = self.data['object_boxes'][index, obj_idx].tolist()
       x0 = float(x) / WW

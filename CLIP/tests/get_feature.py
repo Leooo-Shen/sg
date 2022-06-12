@@ -7,7 +7,9 @@ import torch.nn.functional as F
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model, preprocess = clip.load("ViT-B/32", device=device)
 
-image = preprocess(Image.open("/workspace/sg2im/CLIP/CLIP.png")).unsqueeze(0).to(device)
+image = preprocess(Image.open("/workspace/sg2im/CLIP/2.jpg")).unsqueeze(0).to(device)
+print(image.shape)
+
 text = clip.tokenize(["a picture of a diagram", "a dog", "a cat", "a cow"]).to(device)  # torch.Size([3, 77])
 
 with torch.no_grad():

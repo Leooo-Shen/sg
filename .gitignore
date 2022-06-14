@@ -6,3 +6,4 @@ sg2im-models/
 env/
 datasets/
 checkpoints/
+runs/

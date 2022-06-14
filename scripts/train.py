@@ -45,6 +45,8 @@ from sg2im.utils import int_tuple, float_tuple, str_tuple
 from sg2im.utils import timeit, bool_flag, LossManager
 
 import clip
+from torch.cuda.amp import autocast, GradScaler
+
 
 torch.backends.cudnn.benchmark = True
 
@@ -428,6 +430,7 @@ def create_prompt(obj_name):
 def main(args):
   # print(args)
   device = "cuda" if torch.cuda.is_available() else "cpu"
+  scaler = GradScaler()
   
   check_args(args)
   float_dtype = torch.cuda.FloatTensor
@@ -444,7 +447,8 @@ def main(args):
   img_discriminator, d_img_kwargs = build_img_discriminator(args, vocab)
   gan_g_loss, gan_d_loss = get_gan_losses(args.gan_loss_type)
   clip_model, _ = clip.load("ViT-B/32", device=device)
-      
+  clip_model.eval()
+  
   if obj_discriminator is not None:
     obj_discriminator.type(float_dtype)
     obj_discriminator.train()
@@ -544,6 +548,7 @@ def main(args):
       predicates = triples[:, 1]
       
       ## TODO:
+      
       ## model forward
       with timeit('forward', args.timing):
         model_boxes = boxes
@@ -551,7 +556,6 @@ def main(args):
         prompt = []
         
         # print(vocab["object_idx_to_name"])
-
         for obj_idx in objs.cpu().detach().numpy():
           obj_name = vocab["object_idx_to_name"][obj_idx]
           prompt.append(create_prompt(obj_name))
@@ -560,34 +564,37 @@ def main(args):
         with torch.no_grad():
           clip_features = clip_model.encode_text(text)
           
-        model_out = model(objs, triples, obj_to_img,
-                          boxes_gt=model_boxes, masks_gt=model_masks, clip_features=clip_features)
-        imgs_pred, boxes_pred, masks_pred, predicate_scores = model_out
+        with autocast():
+          model_out = model(objs, triples, obj_to_img,
+                            boxes_gt=model_boxes, masks_gt=model_masks, clip_features=clip_features)
+          imgs_pred, boxes_pred, masks_pred, predicate_scores = model_out
       
-      ## get losses
-      with timeit('loss', args.timing):
-        # Skip the pixel loss if using GT boxes
-        skip_pixel_loss = (model_boxes is None)
-        total_loss, losses =  calculate_model_losses(
-                                args, skip_pixel_loss, model, imgs, imgs_pred,
-                                boxes, boxes_pred, masks, masks_pred,
-                                predicates, predicate_scores)
+          ## get losses
+          with timeit('loss', args.timing):
+            # Skip the pixel loss if using GT boxes
+            skip_pixel_loss = (model_boxes is None)
+            total_loss, losses =  calculate_model_losses(
+                                    args, skip_pixel_loss, model, imgs, imgs_pred,
+                                    boxes, boxes_pred, masks, masks_pred,
+                                    predicates, predicate_scores)
 
       ## object discriminator loss
       if obj_discriminator is not None:
-        scores_fake, ac_loss = obj_discriminator(imgs_pred, objs, boxes, obj_to_img)
-        total_loss = add_loss(total_loss, ac_loss, losses, 'ac_loss',
-                              args.ac_loss_weight)
-        weight = args.discriminator_loss_weight * args.d_obj_weight
-        total_loss = add_loss(total_loss, gan_g_loss(scores_fake), losses,
-                              'g_gan_obj_loss', weight)
+        with autocast():
+          scores_fake, ac_loss = obj_discriminator(imgs_pred, objs, boxes, obj_to_img)
+          total_loss = add_loss(total_loss, ac_loss, losses, 'ac_loss',
+                                args.ac_loss_weight)
+          weight = args.discriminator_loss_weight * args.d_obj_weight
+          total_loss = add_loss(total_loss, gan_g_loss(scores_fake), losses,
+                                'g_gan_obj_loss', weight)
 
       ## image discriminator loss
       if img_discriminator is not None:
-        scores_fake = img_discriminator(imgs_pred)
-        weight = args.discriminator_loss_weight * args.d_img_weight
-        total_loss = add_loss(total_loss, gan_g_loss(scores_fake), losses,
-                              'g_gan_img_loss', weight)
+        with autocast():
+          scores_fake = img_discriminator(imgs_pred)
+          weight = args.discriminator_loss_weight * args.d_img_weight
+          total_loss = add_loss(total_loss, gan_g_loss(scores_fake), losses,
+                                'g_gan_img_loss', weight)
 
       losses['total_loss'] = total_loss.item()
       if not math.isfinite(losses['total_loss']):
@@ -596,9 +603,13 @@ def main(args):
 
       ## backward
       optimizer.zero_grad()
+      
       with timeit('backward', args.timing):
-        total_loss.backward()
-      optimizer.step()
+        # total_loss.backward()
+        scaler.scale(total_loss).backward()
+      scaler.step(optimizer)
+      scaler.update()
+      # optimizer.step()
       total_loss_d = None
       ac_loss_real = None
       ac_loss_fake = None
@@ -606,33 +617,42 @@ def main(args):
       
       ## train object discriminator
       if obj_discriminator is not None:
-        d_obj_losses = LossManager()
-        imgs_fake = imgs_pred.detach()
-        scores_fake, ac_loss_fake = obj_discriminator(imgs_fake, objs, boxes, obj_to_img)
-        scores_real, ac_loss_real = obj_discriminator(imgs, objs, boxes, obj_to_img)
+        with autocast():
+          d_obj_losses = LossManager()
+          imgs_fake = imgs_pred.detach()
+          scores_fake, ac_loss_fake = obj_discriminator(imgs_fake, objs, boxes, obj_to_img)
+          scores_real, ac_loss_real = obj_discriminator(imgs, objs, boxes, obj_to_img)
 
-        d_obj_gan_loss = gan_d_loss(scores_real, scores_fake)
-        d_obj_losses.add_loss(d_obj_gan_loss, 'd_obj_gan_loss')
-        d_obj_losses.add_loss(ac_loss_real, 'd_ac_loss_real')
-        d_obj_losses.add_loss(ac_loss_fake, 'd_ac_loss_fake')
+          d_obj_gan_loss = gan_d_loss(scores_real, scores_fake)
+          d_obj_losses.add_loss(d_obj_gan_loss, 'd_obj_gan_loss')
+          d_obj_losses.add_loss(ac_loss_real, 'd_ac_loss_real')
+          d_obj_losses.add_loss(ac_loss_fake, 'd_ac_loss_fake')
 
         optimizer_d_obj.zero_grad()
-        d_obj_losses.total_loss.backward()
-        optimizer_d_obj.step()
+        scaler.scale(d_obj_losses.total_loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+        # d_obj_losses.total_loss.backward()
+        # optimizer_d_obj.step()
 
       ## train image discriminator
       if img_discriminator is not None:
-        d_img_losses = LossManager()
-        imgs_fake = imgs_pred.detach()
-        scores_fake = img_discriminator(imgs_fake)
-        scores_real = img_discriminator(imgs)
+        with autocast():
+          d_img_losses = LossManager()
+          imgs_fake = imgs_pred.detach()
+          scores_fake = img_discriminator(imgs_fake)
+          scores_real = img_discriminator(imgs)
 
-        d_img_gan_loss = gan_d_loss(scores_real, scores_fake)
-        d_img_losses.add_loss(d_img_gan_loss, 'd_img_gan_loss')
+          d_img_gan_loss = gan_d_loss(scores_real, scores_fake)
+          d_img_losses.add_loss(d_img_gan_loss, 'd_img_gan_loss')
         
         optimizer_d_img.zero_grad()
-        d_img_losses.total_loss.backward()
-        optimizer_d_img.step()
+        scaler.scale(d_img_losses.total_loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+      
+        # d_img_losses.total_loss.backward()
+        # optimizer_d_img.step()
 
       ## output printings
       if t % args.print_every == 0:

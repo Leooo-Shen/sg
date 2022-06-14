@@ -127,7 +127,15 @@ class Sg2ImModel(nn.Module):
       obj_vecs, pred_vecs = self.gconv_net(obj_vecs, pred_vecs, edges)
       
     obj_vecs = obj_vecs.T
-    linear = nn.Linear(obj_vecs.shape[1], self.batch_size).to(obj_vecs.device)
+    linear = nn.Sequential(
+      nn.Linear(obj_vecs.shape[1], 512),
+      nn.ReLU(),
+      nn.BatchNorm1d(512),
+      nn.Dropout(0.5),
+      nn.Linear(512, self.batch_size)
+    )
+    
+    linear.to(obj_vecs.device)
     gcn_features = linear(obj_vecs)
     
     return gcn_features.T  # [batch_size, 512]

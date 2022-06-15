@@ -274,6 +274,7 @@ def build_loaders(args):
     'num_workers': args.loader_num_workers,
     'shuffle': True,
     'collate_fn': collate_fn,
+    'drop_last': True,
   }
   
   train_loader = DataLoader(train_dset, **loader_kwargs)
@@ -370,8 +371,8 @@ def main(args):
   # print(args)
   scaler = GradScaler()
   device = "cuda" if torch.cuda.is_available() else "cpu"
-  # writer = SummaryWriter("/root/tf-logs")
-  writer = SummaryWriter("runs")
+  # writer = SummaryWriter("runs")
+  writer = SummaryWriter("/mnt/tensorboard")
   
   check_args(args)
   float_dtype = torch.cuda.FloatTensor
@@ -379,6 +380,10 @@ def main(args):
 
   vocab, train_loader, val_loader = build_loaders(args)
   model, model_kwargs = build_model(args, vocab)
+  if torch.cuda.device_count() > 1:
+    model = nn.DataParallel(model, device_ids=[0, 1])
+    print("Using ", torch.cuda.device_count(), " GPUs!")
+  model.to(device)
   model.type(float_dtype)
 
   if not os.path.exists(args.output_dir):

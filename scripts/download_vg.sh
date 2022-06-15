@@ -27,10 +27,23 @@ wget https://cs.stanford.edu/people/rak248/VG_100K_2/images.zip -O $VG_DIR/image
 wget https://cs.stanford.edu/people/rak248/VG_100K_2/images2.zip -O $VG_DIR/images2.zip
 
 unzip $VG_DIR/objects.json.zip -d $VG_DIR
-unzip $VG_DIR/attributes.json.zip -d $VG_DIR
-unzip $VG_DIR/relationships.json.zip -d $VG_DIR
-unzip $VG_DIR/image_data.json.zip -d $VG_DIR
-unzip $VG_DIR/images.zip -d $VG_DIR/images
-unzip $VG_DIR/images2.zip -d $VG_DIR/images
+rm $VG_DIR/objects.json.zip
 
+unzip $VG_DIR/attributes.json.zip -d $VG_DIR
+rm $VG_DIR/attributes.json.zip
+
+unzip $VG_DIR/relationships.json.zip -d $VG_DIR
+rm $VG_DIR/relationships.json.zip
+
+unzip $VG_DIR/image_data.json.zip -d $VG_DIR
+rm $VG_DIR/image_data.json.zip
+
+unzip $VG_DIR/images.zip -d $VG_DIR/images
+rm $VG_DIR/images.zip
+
+unzip $VG_DIR/images2.zip -d $VG_DIR/images
+rm $VG_DIR/images2.zip
+
+pip install scipy==1.2
 python scripts/preprocess_vg.py
+pip install scipy==1.7.3

@@ -501,7 +501,7 @@ def main(args):
       if t % 100 == 0:
         checkpoint_path = os.path.join(args.output_dir,'%s_%d.pt' % (args.checkpoint_name, t))
         print('saving checkpoints to:', checkpoint_path)
-        torch.save(model.gcn.state_dict(), checkpoint_path)
+        torch.save(model.module.state_dict(), checkpoint_path)
       
       
 

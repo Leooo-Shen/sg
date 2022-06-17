@@ -498,8 +498,8 @@ def main(args):
 
 
       # TODO: save state_dict
-      if t % 100 == 0:
-        checkpoint_path = os.path.join(args.output_dir,'%s_%d.pt' % (args.checkpoint_name, t))
+      if t % 500 == 0:
+        checkpoint_path = os.path.join(args.output_dir,'%s_%d_loss_%.4f.pt' % (args.checkpoint_name, t, losses['total_loss']))
         print('saving checkpoints to:', checkpoint_path)
         torch.save(model.module.state_dict(), checkpoint_path)
       

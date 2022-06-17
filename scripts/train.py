@@ -15,6 +15,7 @@
 # limitations under the License.
 
 
+from asyncore import write
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -142,7 +143,7 @@ parser.add_argument('--d_img_weight', default=1.0, type=float) # multiplied by d
 # Output options
 parser.add_argument('--print_every', default=10, type=int)
 parser.add_argument('--timing', default=False, type=bool_flag)
-parser.add_argument('--checkpoint_every', default=500, type=int)
+parser.add_argument('--checkpoint_every', default=1, type=int)
 parser.add_argument('--output_dir', default='checkpoints/SG2IM_CLIP')
 parser.add_argument('--checkpoint_name', default='sg2im_clip')
 parser.add_argument('--restore_name', default='sg2im_clip')
@@ -433,6 +434,9 @@ def main(args):
   device = "cuda" if torch.cuda.is_available() else "cpu"
   writer = SummaryWriter("runs/sg2im_clip")
   
+  if not os.path.exists(args.output_dir):
+    os.makedirs(args.output_dir)
+  
   check_args(args)
   float_dtype = torch.cuda.FloatTensor
   long_dtype = torch.cuda.LongTensor
@@ -679,6 +683,8 @@ def main(args):
 
         print('train iou: ', t_avg_iou)
         print('val iou: ', val_avg_iou)
+        writer.add_scalar('train iou', t_avg_iou, t)
+        writer.add_scalar('val iou', val_avg_iou, t)
 
         for k, v in val_losses.items():
           checkpoint['val_losses'][k].append(v)
@@ -696,13 +702,13 @@ def main(args):
         checkpoint['counters']['t'] = t
         checkpoint['counters']['epoch'] = epoch
         checkpoint_path = os.path.join(args.output_dir,
-                              '%s_with_model_%d.pt' % (args.checkpoint_name, t))
+                              '%s_with_model_%d_viou%.3f.pt' % (args.checkpoint_name, t, val_avg_iou))
         print('Saving checkpoint to ', checkpoint_path)
         torch.save(checkpoint, checkpoint_path)
 
         # Save another checkpoint without any model or optim state
         checkpoint_path = os.path.join(args.output_dir,
-                              '%s_no_model_%d.pt' % (args.checkpoint_name, t))
+                              '%s_no_model_%d_viou%.3f.pt' % (args.checkpoint_name, t, val_avg_iou))
         key_blacklist = ['model_state', 'optim_state', 'model_best_state',
                          'd_obj_state', 'd_obj_optim_state', 'd_obj_best_state',
                          'd_img_state', 'd_img_optim_state', 'd_img_best_state']

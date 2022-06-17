@@ -83,14 +83,14 @@ class Sg2ImModel(nn.Module):
       self.gconv_net = GraphTripleConvNet(**gconv_kwargs)
 
 
-    proj_kwargs = {
-        'input_dim': embedding_dim,
-        'output_dim': 1,
-        'hidden_dim': gconv_hidden_dim,
-        'pooling': gconv_pooling,
-        'mlp_normalization': mlp_normalization,
-      }
-    self.project = GraphTripleConv(**proj_kwargs)
+    # proj_kwargs = {
+    #     'input_dim': embedding_dim,
+    #     'output_dim': 1,
+    #     'hidden_dim': gconv_hidden_dim,
+    #     'pooling': gconv_pooling,
+    #     'mlp_normalization': mlp_normalization,
+    #   }
+    # self.project = GraphTripleConv(**proj_kwargs)
 
   def forward(self, objs, triples, obj_to_img=None,
               clip_features=None):
@@ -133,18 +133,11 @@ class Sg2ImModel(nn.Module):
       obj_vecs, pred_vecs = self.gconv(obj_vecs, pred_vecs, edges)
     if self.gconv_net is not None:
       obj_vecs, pred_vecs = self.gconv_net(obj_vecs, pred_vecs, edges)
+
+    # obj_vecs dim=[obj, 512]
+    obj_vecs = obj_vecs.mean(dim=0)
     
-    print(obj_vecs.shape, pred_vecs.shape)
-    emb, _ = self.project(obj_vecs, pred_vecs, edges)
-    print(555, emb.shape)
-    
-    
-    
-    # obj_vecs = obj_vecs.T
-    
-    # gcn_features = self.linear(obj_vecs)
-    
-    return obj_vecs.T  # [batch_size, 512]
+    return obj_vecs  
   
     
 
@@ -166,7 +159,6 @@ class GraphCLIP(nn.Module):
   def forward(self, imgs, objs, triples, obj_to_img=None):
     prompt = []
     self.clip_model.eval()
-    # print(111, next(self.clip_model.parameters()).device())
     
     # use CLIP to get object_prompt features
     for obj_idx in objs.cpu().detach().numpy():

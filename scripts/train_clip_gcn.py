@@ -371,7 +371,7 @@ def main(args):
   # print(args)
   scaler = GradScaler()
   device = "cuda" if torch.cuda.is_available() else "cpu"
-  writer = SummaryWriter("runs")
+  writer = SummaryWriter("runs/GraphCLIP")
   
   check_args(args)
   float_dtype = torch.cuda.FloatTensor

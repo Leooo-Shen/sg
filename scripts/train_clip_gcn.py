@@ -380,10 +380,11 @@ def main(args):
   vocab, train_loader, val_loader = build_loaders(args)
   model, model_kwargs = build_model(args, vocab)
       
-  # if torch.cuda.device_count() > 1:
-  model = nn.DataParallel(model, device_ids=[0])
-  # model = nn.DataParallel(model, device_ids=[0, 1])
-  print("Using ", torch.cuda.device_count(), " GPUs!")
+  if torch.cuda.device_count() > 1:
+    model = nn.DataParallel(model, device_ids=[0, 1])
+    print("Using ", torch.cuda.device_count(), " GPUs!")
+  else:
+     model = nn.DataParallel(model, device_ids=[0])
   
   for param in model.module.clip_model.parameters():
       param.requires_grad = False

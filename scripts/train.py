@@ -143,8 +143,8 @@ parser.add_argument('--d_img_weight', default=1.0, type=float) # multiplied by d
 parser.add_argument('--print_every', default=10, type=int)
 parser.add_argument('--timing', default=False, type=bool_flag)
 parser.add_argument('--checkpoint_every', default=100, type=int)
-parser.add_argument('--output_dir', default=os.getcwd())
-parser.add_argument('--checkpoint_name', default='checkpoint')
+parser.add_argument('--output_dir', default='checkpoints/SG2IM_CLIP')
+parser.add_argument('--checkpoint_name', default='sg2im_clip')
 parser.add_argument('--checkpoint_start_from', default=None)
 parser.add_argument('--restore_from_checkpoint', default=False, type=bool_flag)
 
@@ -430,6 +430,7 @@ def create_prompt(obj_name):
 def main(args):
   # print(args)
   device = "cuda" if torch.cuda.is_available() else "cpu"
+  writer = SummaryWriter("runs/sg2im_clip")
   
   check_args(args)
   float_dtype = torch.cuda.FloatTensor

@@ -14,6 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+''''
+Since Titan XP is not optimized for amp, this script is not implemented.
+'''
 
 from re import T
 import sys
@@ -432,7 +435,7 @@ def main(args):
   # print(args)
   device = "cuda" if torch.cuda.is_available() else "cpu"
   scaler = GradScaler()
-  # writer = SummaryWriter("tf-logs")
+  writer = SummaryWriter("runs/sg2im_clip")
   
   if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir)

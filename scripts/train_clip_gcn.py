@@ -371,8 +371,7 @@ def main(args):
   # print(args)
   scaler = GradScaler()
   device = "cuda" if torch.cuda.is_available() else "cpu"
-  # writer = SummaryWriter("runs")
-  writer = SummaryWriter("/mnt/tensorboard")
+  writer = SummaryWriter("runs")
   
   check_args(args)
   float_dtype = torch.cuda.FloatTensor

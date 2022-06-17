@@ -28,6 +28,8 @@ import pycocotools.mask as mask_utils
 
 from .utils import imagenet_preprocess, Resize
 
+import matplotlib.pyplot as plt
+
 
 class CocoSceneGraphDataset(Dataset):
   def __init__(self, image_dir, instances_json, stuff_json=None,
@@ -356,6 +358,7 @@ class CocoSceneGraphDataset(Dataset):
       triples.append([i, in_image, O - 1])
     
     triples = torch.LongTensor(triples)
+    print(222, masks.shape)
     return image, objs, boxes, masks, triples
     
 
@@ -417,4 +420,6 @@ def coco_collate_fn(batch):
   out = (all_imgs, all_objs, all_boxes, all_masks, all_triples,
          all_obj_to_img, all_triple_to_img)
   return out
+
+    
 

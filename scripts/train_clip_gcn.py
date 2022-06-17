@@ -382,14 +382,19 @@ def main(args):
   if torch.cuda.device_count() > 1:
     model = nn.DataParallel(model, device_ids=[0, 1])
     print("Using ", torch.cuda.device_count(), " GPUs!")
+
+    for param in model.modules.clip_model.parameters():
+      param.requires_grad = False
+  else:
+    for param in model.clip_model.parameters():
+      param.requires_grad = False
+      
   model.to(device)
   model.type(float_dtype)
 
   if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir)
 
-  for param in model.clip_model.parameters():
-    param.requires_grad = False
 
   optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
 

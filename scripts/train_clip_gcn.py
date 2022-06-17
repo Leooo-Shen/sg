@@ -475,7 +475,7 @@ def main(args):
         with autocast():
           loss = model(imgs, objs, triples, obj_to_img)
           if t % 100 == 0:
-            writer.add_scalars("MSE loss",loss ,t)
+            writer.add_scalar("loss",loss ,t)
       
       losses = {}
       losses['total_loss'] = loss.item()

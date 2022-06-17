@@ -55,7 +55,7 @@ class Sg2ImModel(nn.Module):
     ## embedding layers
     self.obj_embeddings = nn.Embedding(num_objs + 1, embedding_dim)
     self.pred_embeddings = nn.Embedding(num_preds, embedding_dim)
-
+  
     ## construct GCN
     if gconv_num_layers == 0:
       self.gconv = nn.Linear(embedding_dim, gconv_dim)
@@ -152,6 +152,8 @@ class Sg2ImModel(nn.Module):
     obj_vecs_orig = obj_vecs
     pred_vecs = self.pred_embeddings(p)
     
+    # print(obj_vecs.shape)
+    # print(len(objs))
     
     ## GCN calculation
     if isinstance(self.gconv, nn.Linear):

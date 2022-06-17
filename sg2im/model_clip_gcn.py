@@ -34,7 +34,7 @@ class Sg2ImModel(nn.Module):
                refinement_dims=(1024, 512, 256, 128, 64),
                normalization='batch', activation='leakyrelu-0.2',
                mask_size=None, mlp_normalization='none', layout_noise_dim=0,
-               batch_size=8,
+               batch_size=8,project_dim=None,
                **kwargs):
     super(Sg2ImModel, self).__init__()
 
@@ -49,7 +49,6 @@ class Sg2ImModel(nn.Module):
     self.batch_size = batch_size
     # print(self.vocab.keys()) 
     # dict_keys(['object_name_to_idx', 'object_idx_to_name', 'attribute_name_to_idx', 'attribute_idx_to_name', 'pred_name_to_idx', 'pred_idx_to_name'])
-
     
     num_objs = len(vocab['object_idx_to_name'])
     num_preds = len(vocab['pred_idx_to_name'])
@@ -57,6 +56,7 @@ class Sg2ImModel(nn.Module):
     ## embedding layers
     self.obj_embeddings = nn.Embedding(num_objs + 1, embedding_dim)
     self.pred_embeddings = nn.Embedding(num_preds, embedding_dim)
+  
 
     ## construct GCN
     if gconv_num_layers == 0:
@@ -82,6 +82,15 @@ class Sg2ImModel(nn.Module):
       }
       self.gconv_net = GraphTripleConvNet(**gconv_kwargs)
 
+
+    proj_kwargs = {
+        'input_dim': embedding_dim,
+        'output_dim': 1,
+        'hidden_dim': gconv_hidden_dim,
+        'pooling': gconv_pooling,
+        'mlp_normalization': mlp_normalization,
+      }
+    self.project = GraphTripleConv(**proj_kwargs)
 
   def forward(self, objs, triples, obj_to_img=None,
               clip_features=None):
@@ -114,7 +123,6 @@ class Sg2ImModel(nn.Module):
       obj_vecs = self.obj_embeddings(objs)  # torch.Size([len(objs), 512])
     else:
       obj_vecs = clip_features.float()
-    obj_vecs_orig = obj_vecs
     pred_vecs = self.pred_embeddings(p)
     
 
@@ -125,20 +133,18 @@ class Sg2ImModel(nn.Module):
       obj_vecs, pred_vecs = self.gconv(obj_vecs, pred_vecs, edges)
     if self.gconv_net is not None:
       obj_vecs, pred_vecs = self.gconv_net(obj_vecs, pred_vecs, edges)
-      
-    obj_vecs = obj_vecs.T
-    linear = nn.Sequential(
-      nn.Linear(obj_vecs.shape[1], 512),
-      nn.ReLU(),
-      nn.BatchNorm1d(512),
-      nn.Dropout(0.5),
-      nn.Linear(512, self.batch_size)
-    )
     
-    linear.to(obj_vecs.device)
-    gcn_features = linear(obj_vecs)
+    print(obj_vecs.shape, pred_vecs.shape)
+    emb, _ = self.project(obj_vecs, pred_vecs, edges)
+    print(555, emb.shape)
     
-    return gcn_features.T  # [batch_size, 512]
+    
+    
+    # obj_vecs = obj_vecs.T
+    
+    # gcn_features = self.linear(obj_vecs)
+    
+    return obj_vecs.T  # [batch_size, 512]
   
     
 
@@ -160,15 +166,17 @@ class GraphCLIP(nn.Module):
   def forward(self, imgs, objs, triples, obj_to_img=None):
     prompt = []
     self.clip_model.eval()
+    # print(111, next(self.clip_model.parameters()).device())
     
     # use CLIP to get object_prompt features
     for obj_idx in objs.cpu().detach().numpy():
       obj_name = self.vocab["object_idx_to_name"][obj_idx]
       prompt.append(self.create_prompt(obj_name))
-
+    
     with torch.no_grad():
       image_embeddings = self.clip_model.encode_image(imgs)
-      text = clip.tokenize(prompt).to(objs.device)
+      text = clip.tokenize(prompt).to(image_embeddings.device)
+      # text = clip.tokenize(prompt)
       text_embeddings = self.clip_model.encode_text(text)
   
     gcn_embeddings = self.gcn(objs, triples, obj_to_img,clip_features=text_embeddings)

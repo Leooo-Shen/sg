@@ -142,9 +142,10 @@ parser.add_argument('--d_img_weight', default=1.0, type=float) # multiplied by d
 # Output options
 parser.add_argument('--print_every', default=10, type=int)
 parser.add_argument('--timing', default=False, type=bool_flag)
-parser.add_argument('--checkpoint_every', default=100, type=int)
+parser.add_argument('--checkpoint_every', default=500, type=int)
 parser.add_argument('--output_dir', default='checkpoints/SG2IM_CLIP')
 parser.add_argument('--checkpoint_name', default='sg2im_clip')
+parser.add_argument('--restore_name', default='sg2im_clip')
 parser.add_argument('--checkpoint_start_from', default=None)
 parser.add_argument('--restore_from_checkpoint', default=False, type=bool_flag)
 
@@ -469,7 +470,7 @@ def main(args):
   ## restore from checkpoints
   restore_path = None
   if args.restore_from_checkpoint:
-    restore_path = '%s_with_model.pt' % args.checkpoint_name
+    restore_path = args.checkpoint_name  # TODO:
     restore_path = os.path.join(args.output_dir, restore_path)
   if restore_path is not None and os.path.isfile(restore_path):
     print('Restoring from checkpoint:')
@@ -549,9 +550,7 @@ def main(args):
       else:
         assert False
       predicates = triples[:, 1]
-      
-      ## TODO:
-      
+
       ## model forward
       with timeit('forward', args.timing):
         model_boxes = boxes
@@ -697,13 +696,13 @@ def main(args):
         checkpoint['counters']['t'] = t
         checkpoint['counters']['epoch'] = epoch
         checkpoint_path = os.path.join(args.output_dir,
-                              '%s_with_model.pt' % args.checkpoint_name)
+                              '%s_with_model_%d.pt' % (args.checkpoint_name, t))
         print('Saving checkpoint to ', checkpoint_path)
         torch.save(checkpoint, checkpoint_path)
 
         # Save another checkpoint without any model or optim state
         checkpoint_path = os.path.join(args.output_dir,
-                              '%s_no_model.pt' % args.checkpoint_name)
+                              '%s_no_model_%d.pt' % (args.checkpoint_name, t))
         key_blacklist = ['model_state', 'optim_state', 'model_best_state',
                          'd_obj_state', 'd_obj_optim_state', 'd_obj_best_state',
                          'd_img_state', 'd_img_optim_state', 'd_img_best_state']

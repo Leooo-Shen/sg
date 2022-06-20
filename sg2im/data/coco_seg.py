@@ -273,7 +273,6 @@ class CocoSceneGraphDataset(Dataset):
 
       # This will give a numpy array of shape (HH, WW)
       mask = seg_to_mask(object_data['segmentation'], WW, HH)
-
       mask = imresize(255.0 * mask, (self.mask_size, self.mask_size),
                       mode='constant')
       mask = torch.from_numpy((mask > 128).astype(np.int64))
@@ -288,7 +287,7 @@ class CocoSceneGraphDataset(Dataset):
     boxes = torch.stack(boxes, dim=0)
     masks = torch.stack(masks, dim=0)
 
-    box_areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+    # box_areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
 
     # Compute centers of all objects
     obj_centers = []

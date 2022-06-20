@@ -141,8 +141,8 @@ parser.add_argument('--d_img_arch',
 parser.add_argument('--d_img_weight', default=1.0, type=float) # multiplied by d_loss_weight
 
 # Output options
-parser.add_argument('--print_every', default=1, type=int)
-parser.add_argument('--checkpoint_every', default=1, type=int)
+parser.add_argument('--print_every', default=500, type=int)
+parser.add_argument('--checkpoint_every', default=50000, type=int)
 parser.add_argument('--timing', default=False, type=bool_flag)
 parser.add_argument('--output_dir', default='checkpoints/SG2IM_CLIP')
 parser.add_argument('--checkpoint_name', default='sg2im_clip')

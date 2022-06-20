@@ -261,6 +261,7 @@ class CocoSceneGraphDataset(Dataset):
 
     H, W = self.image_size
     objs, boxes, masks = [], [], []
+    
     for object_data in self.image_id_to_objects[image_id]:
       objs.append(object_data['category_id'])
       x, y, w, h = object_data['bbox']
@@ -273,13 +274,10 @@ class CocoSceneGraphDataset(Dataset):
       # This will give a numpy array of shape (HH, WW)
       mask = seg_to_mask(object_data['segmentation'], WW, HH)
 
+      
       # Crop the mask according to the bounding box, being careful to
       # ensure that we don't crop a zero-area region
-      mx0, mx1 = int(round(x)), int(round(x + w))
-      my0, my1 = int(round(y)), int(round(y + h))
-      mx1 = max(mx0 + 1, mx1)
-      my1 = max(my0 + 1, my1)
-      mask = mask[my0:my1, mx0:mx1]
+
       mask = imresize(255.0 * mask, (self.mask_size, self.mask_size),
                       mode='constant')
       mask = torch.from_numpy((mask > 128).astype(np.int64))
@@ -358,7 +356,6 @@ class CocoSceneGraphDataset(Dataset):
       triples.append([i, in_image, O - 1])
     
     triples = torch.LongTensor(triples)
-    print(222, masks.shape)
     return image, objs, boxes, masks, triples
     
 

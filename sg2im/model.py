@@ -171,7 +171,8 @@ class Sg2ImModel(nn.Module):
     if self.mask_net is not None:
       mask_scores = self.mask_net(obj_vecs.view(O, -1, 1, 1))
       masks_pred = mask_scores.squeeze(1).sigmoid()
-
+    
+    
     s_boxes, o_boxes = boxes_pred[s], boxes_pred[o]
     s_vecs, o_vecs = obj_vecs_orig[s], obj_vecs_orig[o]
     rel_aux_input = torch.cat([s_boxes, o_boxes, s_vecs, o_vecs], dim=1)

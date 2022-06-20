@@ -71,7 +71,8 @@ def main(args):
   with torch.no_grad():
     imgs, boxes_pred, masks_pred, _ = model.forward_json(scene_graphs)
   imgs = imagenet_deprocess_batch(imgs)
-
+  print(imgs.shape, boxes_pred.shape, masks_pred.shape)
+  
   # Save the generated images
   for i in range(imgs.shape[0]):
     img_np = imgs[i].numpy().transpose(1, 2, 0)

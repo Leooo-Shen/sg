@@ -452,12 +452,12 @@ def main(args):
   gan_g_loss, gan_d_loss = get_gan_losses(args.gan_loss_type)
   clip_model, _ = clip.load("ViT-B/32", device=device, download_root='./pretrained_weights')
   clip_model.eval()
-  
+    
   for param in clip_model.parameters():
     param.requires_grad = False
   
   clip_model = nn.DataParallel(clip_model, device_ids=ids)
-  
+  print('[*] CLIP model load successfully!')
   
   if obj_discriminator is not None:
     obj_discriminator.type(float_dtype)

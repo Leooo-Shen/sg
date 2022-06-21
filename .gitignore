@@ -7,3 +7,5 @@ env/
 datasets/
 checkpoints/
 runs/
+.pai_simulator/
+.vscode/

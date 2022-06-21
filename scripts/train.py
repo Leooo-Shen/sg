@@ -35,7 +35,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from sg2im.data import imagenet_deprocess_batch
+# from sg2im.data import imagenet_deprocess_batch
 from sg2im.data.coco import CocoSceneGraphDataset, coco_collate_fn
 from sg2im.data.vg import VgSceneGraphDataset, vg_collate_fn
 from sg2im.discriminators import PatchDiscriminator, AcCropDiscriminator
@@ -48,7 +48,7 @@ from sg2im.utils import timeit, bool_flag, LossManager
 import clip
 from tensorboardX import SummaryWriter
 
-torch.backends.cudnn.benchmark = True
+# torch.backends.cudnn.benchmark = True
 
 VG_DIR = os.path.expanduser('datasets/vg')
 COCO_DIR = os.path.expanduser('datasets/coco')
@@ -359,13 +359,13 @@ def check_model(args, t, loader, model):
     mean_losses = {k: np.mean(v) for k, v in all_losses.items()}
     avg_iou = total_iou / total_boxes
 
-    masks_to_store = masks
-    if masks_to_store is not None:
-      masks_to_store = masks_to_store.data.cpu().clone()
+    # masks_to_store = masks
+    # if masks_to_store is not None:
+    #   masks_to_store = masks_to_store.data.cpu().clone()
 
-    masks_pred_to_store = masks_pred
-    if masks_pred_to_store is not None:
-      masks_pred_to_store = masks_pred_to_store.data.cpu().clone()
+    # masks_pred_to_store = masks_pred
+    # if masks_pred_to_store is not None:
+    #   masks_pred_to_store = masks_pred_to_store.data.cpu().clone()
 
   # batch_data = {
   #   'objs': objs.detach().cpu().clone(),

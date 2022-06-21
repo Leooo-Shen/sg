@@ -148,6 +148,8 @@ parser.add_argument('--output_dir', default='checkpoints/SG2IM_CLIP')
 parser.add_argument('--checkpoint_name', default='sg2im_clip')
 parser.add_argument('--restore_from_checkpoint', default=False, type=bool)
 
+parser.add_argument('--debug', default=False, type=bool)
+
 
 def add_loss(total_loss, curr_loss, loss_dict, loss_name, weight=1):
   curr_loss = curr_loss * weight
@@ -417,6 +419,11 @@ def create_prompt(obj_name):
   
   
 def main(args):
+  if args.debug:
+    args.checkpoint_every = 1
+    args.print_every = 1
+    args.batch_size = 4
+    
   # print(args)
   device = "cuda" if torch.cuda.is_available() else "cpu"
   writer = SummaryWriter("runs/sg2im_clip")
@@ -430,10 +437,11 @@ def main(args):
 
   vocab, train_loader, val_loader = build_loaders(args)
   
+  # FIXME: DP bug, replica
   print("Using ", torch.cuda.device_count(), " GPUs!")
   if torch.cuda.device_count() > 1:
-    ids = [0,1]
-    # ids = [0]
+    # ids = [0,1]
+    ids = [0]
   else:
     ids = [0]
     
@@ -505,7 +513,7 @@ def main(args):
         model_boxes = boxes
         model_masks = masks 
         prompt = []
-        
+
         # print(vocab["object_idx_to_name"])
         for obj_idx in objs.cpu().detach().numpy():
           obj_name = vocab["object_idx_to_name"][obj_idx]
@@ -519,6 +527,7 @@ def main(args):
                           boxes_gt=model_boxes, masks_gt=model_masks, clip_features=clip_features)
         imgs_pred, boxes_pred, masks_pred, predicate_scores = model_out
       
+        
         ## get losses
         with timeit('loss', args.timing):
           # Skip the pixel loss if using GT boxes
@@ -593,6 +602,10 @@ def main(args):
       ## output printings
       if t % args.print_every == 0:
         print('t = %d / %d' % (t, args.num_iterations))
+        
+        writer.add_images('imgs_pred', imgs_pred, t) 
+        writer.add_images('imgs_gt', imgs, t) 
+        
         for name, val in losses.items():
           print(' G [%s]: %.4f' % (name, val))
         writer.add_scalars('losses', losses, t)

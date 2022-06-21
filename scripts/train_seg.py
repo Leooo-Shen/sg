@@ -522,6 +522,8 @@ def main(args):
         print('t = %d / %d, loss: %.4f' % (t, args.num_iterations, loss.item()))
 
         writer.add_scalar('loss', loss, t)
+        writer.add_images('masks_pred', masks_pred, t) 
+        writer.add_images('masks', masks, t) 
         
       ## save checkpoints and print
       if t % args.checkpoint_every == 0:

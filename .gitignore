@@ -9,3 +9,4 @@ checkpoints/
 runs/
 .pai_simulator/
 .vscode/
+pretrained_weights/

@@ -450,7 +450,7 @@ def main(args):
   img_discriminator = nn.DataParallel(img_discriminator, device_ids=ids)
   
   gan_g_loss, gan_d_loss = get_gan_losses(args.gan_loss_type)
-  clip_model, _ = clip.load("ViT-B/32", device=device)
+  clip_model, _ = clip.load("ViT-B/32", device=device, download_root='./pretrained_weights')
   clip_model.eval()
   
   for param in clip_model.parameters():

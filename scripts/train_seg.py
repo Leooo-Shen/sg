@@ -48,7 +48,7 @@ from sg2im.utils import timeit, bool_flag, LossManager
 import clip
 from tensorboardX import SummaryWriter
 
-# torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.benchmark = True
 
 VG_DIR = os.path.expanduser('datasets/vg')
 COCO_DIR = os.path.expanduser('datasets/coco')
@@ -438,6 +438,7 @@ def main(args):
   print("Using ", torch.cuda.device_count(), " GPUs!")
   if torch.cuda.device_count() > 1:
     ids = [0,1]
+    # ids = [0]
   else:
     ids = [0]
     
@@ -448,12 +449,12 @@ def main(args):
   
   ## Dataparallel
   model = nn.DataParallel(model, device_ids=ids)
-  clip_model, _ = clip.load("ViT-B/32", device=device)
+  clip_model, _ = clip.load("ViT-B/32", device=device, download_root='./pretrained_weights')
   clip_model.eval()
   
   for param in clip_model.parameters():
     param.requires_grad = False
-  clip_model = nn.DataParallel(clip_model, device_ids=ids, download_root='./pretrained_weights')
+  clip_model = nn.DataParallel(clip_model, device_ids=ids)
   
   
 
@@ -496,14 +497,9 @@ def main(args):
         masks_pred = model(objs, triples, obj_to_img,
                           boxes_gt=model_boxes, masks_gt=model_masks, clip_features=clip_features)
         
-        print(masks_pred.shape, model_masks.shape)
         ## get losses
         with timeit('loss', args.timing):
           loss = F.binary_cross_entropy(masks_pred, masks.float())
-      _masks_pred = masks_pred.detach().cpu().numpy()
-      _masks = masks.detach().cpu().numpy()
-      print(np.histogram(_masks_pred))
-      print(np.histogram(_masks))
       
       print(loss)
       if not math.isfinite(loss.item()):
@@ -522,8 +518,8 @@ def main(args):
         print('t = %d / %d, loss: %.4f' % (t, args.num_iterations, loss.item()))
 
         writer.add_scalar('loss', loss, t)
-        writer.add_images('masks_pred', masks_pred, t) 
-        writer.add_images('masks', masks, t) 
+        writer.add_images('masks_pred', masks_pred.unsqueeze(1), t) 
+        writer.add_images('masks', masks.unsqueeze(1), t) 
         
       ## save checkpoints and print
       if t % args.checkpoint_every == 0:

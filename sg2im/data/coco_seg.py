@@ -28,9 +28,6 @@ import pycocotools.mask as mask_utils
 
 from .utils import imagenet_preprocess, Resize
 
-import matplotlib.pyplot as plt
-
-
 class CocoSceneGraphDataset(Dataset):
   def __init__(self, image_dir, instances_json, stuff_json=None,
                stuff_only=True, image_size=(64, 64), mask_size=16,

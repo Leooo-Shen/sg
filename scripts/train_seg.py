@@ -48,7 +48,7 @@ from sg2im.utils import timeit, bool_flag, LossManager
 import clip
 from tensorboardX import SummaryWriter
 
-torch.backends.cudnn.benchmark = True
+# torch.backends.cudnn.benchmark = True
 
 VG_DIR = os.path.expanduser('datasets/vg')
 COCO_DIR = os.path.expanduser('datasets/coco')
@@ -453,7 +453,7 @@ def main(args):
   
   for param in clip_model.parameters():
     param.requires_grad = False
-  clip_model = nn.DataParallel(clip_model, device_ids=ids)
+  clip_model = nn.DataParallel(clip_model, device_ids=ids, download_root='./pretrained_weights')
   
   
 

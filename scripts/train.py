@@ -432,8 +432,8 @@ def main(args):
   
   print("Using ", torch.cuda.device_count(), " GPUs!")
   if torch.cuda.device_count() > 1:
-    # ids = [0,1]
-    ids = [0]
+    ids = [0,1]
+    # ids = [0]
   else:
     ids = [0]
     

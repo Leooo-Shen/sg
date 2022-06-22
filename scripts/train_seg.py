@@ -424,7 +424,7 @@ def main(args):
     args.batch_size = 4
     
   device = "cuda" if torch.cuda.is_available() else "cpu"
-  writer = SummaryWriter("runs/sg2im_clip")
+  writer = SummaryWriter("runs/sg_seg")
   
   if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir)
@@ -521,6 +521,8 @@ def main(args):
         writer.add_scalar('loss', loss, t)
         writer.add_images('masks_pred', masks_pred.unsqueeze(1), t) 
         writer.add_images('masks', masks.unsqueeze(1), t) 
+        writer.add_images('imgs', imgs, t) 
+        
         
       ## save checkpoints and print
       if t % args.checkpoint_every == 0:

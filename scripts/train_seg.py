@@ -420,7 +420,7 @@ def main(args):
   # print(args)
   if args.debug:
     args.checkpoint_every = 1
-    args.print_every = 1
+    args.print_every = 4
     args.batch_size = 4
     
   device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -502,7 +502,6 @@ def main(args):
         with timeit('loss', args.timing):
           loss = F.binary_cross_entropy(masks_pred, masks.float())
       
-      print(loss)
       if not math.isfinite(loss.item()):
         print('WARNING: Got loss = NaN, not backpropping')
         continue
@@ -515,7 +514,7 @@ def main(args):
       optimizer.step()
       
       ## output printings
-      if t % args.print_every == 0:
+      if t % args.print_every == 1:
         print('t = %d / %d, loss: %.4f' % (t, args.num_iterations, loss.item()))
 
         writer.add_scalar('loss', loss, t)

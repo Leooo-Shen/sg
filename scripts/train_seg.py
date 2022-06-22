@@ -436,11 +436,11 @@ def main(args):
   vocab, train_loader, val_loader = build_loaders(args)
   
   print("Using ", torch.cuda.device_count(), " GPUs!")
-  if torch.cuda.device_count() > 1:
-    ids = [0,1]
-    # ids = [0]
-  else:
-    ids = [0]
+  # if torch.cuda.device_count() > 1:
+  #   ids = [0,1]
+  #   # ids = [0]
+  # else:
+  #   ids = [0]
     
   model, model_kwargs = build_model(args, vocab)
   model.type(float_dtype)
@@ -448,13 +448,13 @@ def main(args):
   optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
   
   ## Dataparallel
-  model = nn.DataParallel(model, device_ids=ids)
+  # model = nn.DataParallel(model, device_ids=ids)
   clip_model, _ = clip.load("ViT-B/32", device=device, download_root='./pretrained_weights')
   clip_model.eval()
   
   for param in clip_model.parameters():
     param.requires_grad = False
-  clip_model = nn.DataParallel(clip_model, device_ids=ids)
+  # clip_model = nn.DataParallel(clip_model, device_ids=ids)
   
   
 
@@ -492,7 +492,8 @@ def main(args):
           
         text = clip.tokenize(prompt).to(objs.device)
         with torch.no_grad():
-          clip_features = clip_model.module.encode_text(text)
+          # clip_features = clip_model.module.encode_text(text)
+          clip_features = clip_model.encode_text(text)
           
         masks_pred = model(objs, triples, obj_to_img,
                           boxes_gt=model_boxes, masks_gt=model_masks, clip_features=clip_features)
@@ -539,7 +540,8 @@ def main(args):
         checkpoint_path = os.path.join(args.output_dir,'%s_%s_it%d_loss%.4f.pt' 
                                        % (args.checkpoint_name, args.dataset, t, loss.item()))
         print('saving checkpoints to:', checkpoint_path)
-        torch.save(model.module.state_dict(), checkpoint_path)
+        # torch.save(model.module.state_dict(), checkpoint_path)
+        torch.save(model.state_dict(), checkpoint_path)
 
 
 if __name__ == '__main__':

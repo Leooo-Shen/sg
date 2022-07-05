@@ -54,7 +54,7 @@ VG_DIR = os.path.expanduser('datasets/vg')
 COCO_DIR = os.path.expanduser('datasets/coco')
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', default='coco', choices=['vg', 'coco'])
+parser.add_argument('--dataset', default='coco', choices=['vg', 'coco', 'coco_debug'])
 
 # Optimization hyperparameters
 parser.add_argument('--batch_size', default=32, type=int)
@@ -160,12 +160,12 @@ def add_loss(total_loss, curr_loss, loss_dict, loss_name, weight=1):
   return total_loss
 
 
-def check_args(args):
-  H, W = args.image_size
-  for _ in args.refinement_network_dims[1:]:
-    H = H // 2
-  if H == 0:
-    raise ValueError("Too many layers in refinement network")
+# def check_args(args):
+#   H, W = args.image_size
+#   for _ in args.refinement_network_dims[1:]:
+#     H = H // 2
+#   if H == 0:
+#     raise ValueError("Too many layers in refinement network")
 
 
 def build_model(args, vocab):
@@ -295,8 +295,9 @@ def build_loaders(args):
   loader_kwargs = {
     'batch_size': args.batch_size,
     'num_workers': args.loader_num_workers,
-    'shuffle': True,
+    'shuffle': False,
     'collate_fn': collate_fn,
+    'pin_memory': True,
   }
   train_loader = DataLoader(train_dset, **loader_kwargs)
   
@@ -305,80 +306,15 @@ def build_loaders(args):
   return vocab, train_loader, val_loader
 
 
-def check_model(args, t, loader, model):
-  # float_dtype = torch.cuda.FloatTensor
-  # long_dtype = torch.cuda.LongTensor
-  num_samples = 0
-  all_losses = defaultdict(list)
-  total_iou = 0
-  total_boxes = 0
+def check_model(loader, model):
   with torch.no_grad():
     for batch in loader:
       batch = [tensor.cuda() for tensor in batch]
-      masks = None
-      if len(batch) == 6:
-        imgs, objs, boxes, triples, obj_to_img, triple_to_img = batch
-      elif len(batch) == 7:
-        imgs, objs, boxes, masks, triples, obj_to_img, triple_to_img = batch
-      predicates = triples[:, 1] 
-
+      objs, masks, triples = batch
+      
       # Run the model as it has been run during training
-      masks_pred = model(objs, triples, obj_to_img, boxes_gt=boxes, masks_gt=masks)
+      masks_pred = model(objs, triples)
       out = F.binary_cross_entropy(masks_pred, masks.float())
-
-      # skip_pixel_loss = False
-      # total_loss, losses =  calculate_model_losses(
-      #                           args, skip_pixel_loss, model, imgs, imgs_pred,
-      #                           boxes, boxes_pred, masks, masks_pred,
-      #                           predicates, predicate_scores)
-
-      # total_iou += jaccard(boxes_pred, boxes)
-      # total_boxes += boxes_pred.size(0)
-
-      # for loss_name, loss_val in losses.items():
-      #   all_losses[loss_name].append(loss_val)
-      # num_samples += imgs.size(0)
-      # if num_samples >= args.num_val_samples:
-      #   break
-
-    # samples = {}
-    # samples['gt_img'] = imgs
-
-    # model_out = model(objs, triples, obj_to_img, boxes_gt=boxes, masks_gt=masks)
-    # samples['gt_box_gt_mask'] = model_out[0]
-
-    # model_out = model(objs, triples, obj_to_img, boxes_gt=boxes)
-    # samples['gt_box_pred_mask'] = model_out[0]
-
-    # model_out = model(objs, triples, obj_to_img)
-    # samples['pred_box_pred_mask'] = model_out[0]
-
-    # for k, v in samples.items():
-    #   samples[k] = imagenet_deprocess_batch(v)
-
-    # mean_losses = {k: np.mean(v) for k, v in all_losses.items()}
-    # avg_iou = total_iou / total_boxes
-
-    # masks_to_store = masks
-    # if masks_to_store is not None:
-    #   masks_to_store = masks_to_store.data.cpu().clone()
-
-    # masks_pred_to_store = masks_pred
-    # if masks_pred_to_store is not None:
-    #   masks_pred_to_store = masks_pred_to_store.data.cpu().clone()
-
-  # batch_data = {
-  #   'objs': objs.detach().cpu().clone(),
-  #   'boxes_gt': boxes.detach().cpu().clone(), 
-  #   'masks_gt': masks_to_store,
-  #   'triples': triples.detach().cpu().clone(),
-  #   'obj_to_img': obj_to_img.detach().cpu().clone(),
-  #   'triple_to_img': triple_to_img.detach().cpu().clone(),
-  #   'boxes_pred': boxes_pred.detach().cpu().clone(),
-  #   'masks_pred': masks_pred_to_store
-  # }
-  # out = [mean_losses, samples, batch_data, avg_iou]
-  # out = [mean_losses, avg_iou]
 
   return out
 
@@ -419,45 +355,48 @@ def create_prompt(obj_name):
 def main(args):
   # print(args)
   if args.debug:
-    args.checkpoint_every = 1
+    args.checkpoint_every = 1000000
     args.print_every = 4
     args.batch_size = 4
+    args.coco_train_image_dir = args.coco_val_image_dir
+    args.coco_train_instances_json = args.coco_val_instances_json
+    args.coco_train_stuff_json = args.coco_val_stuff_json
     
   device = "cuda" if torch.cuda.is_available() else "cpu"
+  print('Using', device)
+  print("Using ", torch.cuda.device_count(), " GPUs!")
   writer = SummaryWriter("runs/sg_seg")
-  
   if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir)
-  
-  check_args(args)
-  float_dtype = torch.cuda.FloatTensor
-  long_dtype = torch.cuda.LongTensor
 
-  vocab, train_loader, val_loader = build_loaders(args)
-  
-  print("Using ", torch.cuda.device_count(), " GPUs!")
+
   # if torch.cuda.device_count() > 1:
   #   ids = [0,1]
   #   # ids = [0]
   # else:
   #   ids = [0]
-    
-  model, model_kwargs = build_model(args, vocab)
-  model.type(float_dtype)
-  # print(model)  ## Sg2ImModel
+  
+  vocab, train_loader, val_loader = build_loaders(args)
+  model, _ = build_model(args, vocab)
+  model.to(device)
+  
   optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
   
   ## Dataparallel
   # model = nn.DataParallel(model, device_ids=ids)
-  clip_model, _ = clip.load("ViT-B/32", device=device, download_root='./pretrained_weights')
+  clip_model, _ = clip.load("ViT-B/32", device='cuda:0', download_root='./pretrained_weights')
   clip_model.eval()
   
-  for param in clip_model.parameters():
-    param.requires_grad = False
-  # clip_model = nn.DataParallel(clip_model, device_ids=ids)
+  prompt = []
+  for obj_name in vocab["object_idx_to_name"]:
+    prompt.append(create_prompt(obj_name))
+  text = clip.tokenize(prompt).to(device)
   
+  with torch.no_grad():
+    print('[*] Generating object features with CLIP...')
+    clip_features = clip_model.encode_text(text).float()
+  print('[*] Features successfully generated for %d objects' % clip_features.shape[0])
   
-
   ## training
   t, epoch = 0, 0
   while True:
@@ -471,32 +410,17 @@ def main(args):
       # if t == args.eval_mode_after:
       #   print('switching to eval mode')
       #   model.eval()
-        
       t += 1
-      batch = [tensor.cuda() for tensor in batch]
-      
+      # batch = batch.to(device)
 
-      imgs, objs, boxes, masks, triples, obj_to_img, triple_to_img = batch
-      predicates = triples[:, 1]
+      batch = [tensor.to(device) for tensor in batch]
+      objs, masks, triples = batch
 
       ## model forward
       with timeit('forward', args.timing):
-        model_boxes = boxes
-        model_masks = masks 
-        prompt = []
-        
-        # print(vocab["object_idx_to_name"])
-        for obj_idx in objs.cpu().detach().numpy():
-          obj_name = vocab["object_idx_to_name"][obj_idx]
-          prompt.append(create_prompt(obj_name))
-          
-        text = clip.tokenize(prompt).to(objs.device)
-        with torch.no_grad():
-          # clip_features = clip_model.module.encode_text(text)
-          clip_features = clip_model.encode_text(text)
-          
-        masks_pred = model(objs, triples, obj_to_img,
-                          boxes_gt=model_boxes, masks_gt=model_masks, clip_features=clip_features)
+        clip_embeddings = clip_features[objs]
+        # print(clip_embeddings.shape)
+        masks_pred = model(objs, triples, clip_features=clip_embeddings)
         
         ## get losses
         with timeit('loss', args.timing):
@@ -505,14 +429,16 @@ def main(args):
       if not math.isfinite(loss.item()):
         print('WARNING: Got loss = NaN, not backpropping')
         continue
-
       ## backward
       optimizer.zero_grad()
-      
       with timeit('backward', args.timing):
         loss.backward()
-      optimizer.step()
+        
+      # for name, param in model.gconv.named_parameters():
+      #   print(name, param)
+    
       
+      optimizer.step()
       ## output printings
       if t % args.print_every == 1:
         print('t = %d / %d, loss: %.4f' % (t, args.num_iterations, loss.item()))
@@ -520,21 +446,19 @@ def main(args):
         writer.add_scalar('loss', loss, t)
         writer.add_images('masks_pred', masks_pred.unsqueeze(1), t) 
         writer.add_images('masks', masks.unsqueeze(1), t) 
-        writer.add_images('imgs', imgs, t) 
         
         
       ## save checkpoints and print
       if t % args.checkpoint_every == 0:
         # print('checking on train')
-        # t_bi_crs_entropy = check_model(args, t, train_loader, model)
+        # t_bi_crs_entropy = check_model(train_loader, model)
         # print('t_loss: %.4f '%  t_bi_crs_entropy.item())
         # print('t_loss: %.4f '%  loss.item())
+        # writer.add_scalar('train_loss', loss, t)
         
         print('checking on val')
-        val_bi_crs_entropy = check_model(args, t, val_loader, model)
+        val_bi_crs_entropy = check_model(val_loader, model)
         print('val_loss: %.4f '%  val_bi_crs_entropy)
-        
-        writer.add_scalar('train_loss', loss, t)
         writer.add_scalar('val_loss', val_bi_crs_entropy, t)
 
 

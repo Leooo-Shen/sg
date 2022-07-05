@@ -254,9 +254,9 @@ class CocoSceneGraphDataset(Dataset):
     with open(image_path, 'rb') as f:
       with PIL.Image.open(f) as image:
         WW, HH = image.size
-        image = self.transform(image.convert('RGB'))
+        # image = self.transform(image.convert('RGB'))
 
-    H, W = self.image_size
+    # H, W = self.image_size
     objs, boxes, masks = [], [], []
     
     for object_data in self.image_id_to_objects[image_id]:
@@ -348,7 +348,8 @@ class CocoSceneGraphDataset(Dataset):
       triples.append([i, in_image, O - 1])
     
     triples = torch.LongTensor(triples)
-    return image, objs, boxes, masks, triples
+    # return image, objs, boxes, masks, triples
+    return objs, masks, triples
     
 
 def seg_to_mask(seg, width=1.0, height=1.0):
@@ -378,36 +379,35 @@ def coco_collate_fn(batch):
   - obj_to_img: LongTensor of shape (O,) mapping objects to images
   - triple_to_img: LongTensor of shape (T,) mapping triples to images
   """
-  all_imgs, all_objs, all_boxes, all_masks, all_triples = [], [], [], [], []
-  all_obj_to_img, all_triple_to_img = [], []
+  all_objs, all_masks, all_triples =  [], [], []
+  # all_obj_to_img, all_triple_to_img = [], []
   obj_offset = 0
-  for i, (img, objs, boxes, masks, triples) in enumerate(batch):
-    all_imgs.append(img[None])
+  for i, (objs, masks, triples) in enumerate(batch):
     if objs.dim() == 0 or triples.dim() == 0:
       continue
     O, T = objs.size(0), triples.size(0)
     all_objs.append(objs)
-    all_boxes.append(boxes)
     all_masks.append(masks)
     triples = triples.clone()
     triples[:, 0] += obj_offset
     triples[:, 2] += obj_offset
     all_triples.append(triples)
 
-    all_obj_to_img.append(torch.LongTensor(O).fill_(i))
-    all_triple_to_img.append(torch.LongTensor(T).fill_(i))
+    # all_obj_to_img.append(torch.LongTensor(O).fill_(i))
+    # all_triple_to_img.append(torch.LongTensor(T).fill_(i))
     obj_offset += O
 
-  all_imgs = torch.cat(all_imgs)
+  # all_imgs = torch.cat(all_imgs)
+  # all_boxes = torch.cat(all_boxes)
   all_objs = torch.cat(all_objs)
-  all_boxes = torch.cat(all_boxes)
   all_masks = torch.cat(all_masks)
   all_triples = torch.cat(all_triples)
-  all_obj_to_img = torch.cat(all_obj_to_img)
-  all_triple_to_img = torch.cat(all_triple_to_img)
+  # all_obj_to_img = torch.cat(all_obj_to_img)
+  # all_triple_to_img = torch.cat(all_triple_to_img)
 
-  out = (all_imgs, all_objs, all_boxes, all_masks, all_triples,
-         all_obj_to_img, all_triple_to_img)
+  # out = (all_imgs, all_objs, all_boxes, all_masks, all_triples,
+  #        all_obj_to_img, all_triple_to_img)
+  out = (all_objs, all_masks, all_triples)
   return out
 
     

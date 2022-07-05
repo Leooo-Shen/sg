@@ -82,7 +82,6 @@ class Sg2ImModel(nn.Module):
     # self.box_net = build_mlp(box_net_layers, batch_norm=mlp_normalization)
 
     ## mask_net predicts soft segmentation masks from object vectors after GCN
-
     self.mask_net = self._build_mask_net(num_objs, gconv_dim, mask_size)
 
     # rel_aux_layers = [2 * embedding_dim + 8, gconv_hidden_dim, num_preds]
@@ -104,8 +103,7 @@ class Sg2ImModel(nn.Module):
     return nn.Sequential(*layers)
 
   
-  def forward(self, objs, triples, obj_to_img=None,
-              boxes_gt=None, masks_gt=None, clip_features=None):
+  def forward(self, objs, triples, obj_to_img=None, clip_features=None):
     """
     Required Inputs:
     - objs: LongTensor of shape (O,) giving categories for all objects
@@ -120,13 +118,13 @@ class Sg2ImModel(nn.Module):
       the spatial layout; if not given then use predicted boxes.
     """
 
-    O, T = objs.size(0), triples.size(0)
+    O = objs.size(0)
     s, p, o = triples.chunk(3, dim=1)           # All have shape (T, 1)
     s, p, o = [x.squeeze(1) for x in [s, p, o]] # Now have shape (T,)
     edges = torch.stack([s, o], dim=1)          # Shape is (T, 2)
   
-    if obj_to_img is None:
-      obj_to_img = torch.zeros(O, dtype=objs.dtype, device=objs.device)
+    # if obj_to_img is None:
+    #   obj_to_img = torch.zeros(O, dtype=objs.dtype, device=objs.device)
 
     # --------------------------------------------------------------
     # use CLIP features. Here directly replace original embeddings
@@ -135,8 +133,7 @@ class Sg2ImModel(nn.Module):
     if clip_features is None:
       obj_vecs = self.obj_embeddings(objs)  # torch.Size([len(objs), 512])
     else:
-      obj_vecs = clip_features.float()
-    obj_vecs_orig = obj_vecs
+      obj_vecs = clip_features
     pred_vecs = self.pred_embeddings(p)
     
     # print(obj_vecs.shape)
@@ -182,63 +179,63 @@ class Sg2ImModel(nn.Module):
 
     return masks_pred
 
-  def encode_scene_graphs(self, scene_graphs):
-    """
-    Encode one or more scene graphs using this model's vocabulary. Inputs to
-    this method are scene graphs represented as dictionaries like the following:
+  # def encode_scene_graphs(self, scene_graphs):
+  #   """
+  #   Encode one or more scene graphs using this model's vocabulary. Inputs to
+  #   this method are scene graphs represented as dictionaries like the following:
 
-    {
-      "objects": ["cat", "dog", "sky"],
-      "relationships": [
-        [0, "next to", 1],
-        [0, "beneath", 2],
-        [2, "above", 1],
-      ]
-    }
+  #   {
+  #     "objects": ["cat", "dog", "sky"],
+  #     "relationships": [
+  #       [0, "next to", 1],
+  #       [0, "beneath", 2],
+  #       [2, "above", 1],
+  #     ]
+  #   }
 
-    This scene graph has three relationshps: cat next to dog, cat beneath sky,
-    and sky above dog.
+  #   This scene graph has three relationshps: cat next to dog, cat beneath sky,
+  #   and sky above dog.
 
-    Inputs:
-    - scene_graphs: A dictionary giving a single scene graph, or a list of
-      dictionaries giving a sequence of scene graphs.
+  #   Inputs:
+  #   - scene_graphs: A dictionary giving a single scene graph, or a list of
+  #     dictionaries giving a sequence of scene graphs.
 
-    Returns a tuple of LongTensors (objs, triples, obj_to_img) that have the
-    same semantics as self.forward. The returned LongTensors will be on the
-    same device as the model parameters.
-    """
-    if isinstance(scene_graphs, dict):
-      # We just got a single scene graph, so promote it to a list
-      scene_graphs = [scene_graphs]
+  #   Returns a tuple of LongTensors (objs, triples, obj_to_img) that have the
+  #   same semantics as self.forward. The returned LongTensors will be on the
+  #   same device as the model parameters.
+  #   """
+  #   if isinstance(scene_graphs, dict):
+  #     # We just got a single scene graph, so promote it to a list
+  #     scene_graphs = [scene_graphs]
 
-    objs, triples, obj_to_img = [], [], []
-    obj_offset = 0
-    for i, sg in enumerate(scene_graphs):
-      # Insert dummy __image__ object and __in_image__ relationships
-      sg['objects'].append('__image__')
-      image_idx = len(sg['objects']) - 1
-      for j in range(image_idx):
-        sg['relationships'].append([j, '__in_image__', image_idx])
+  #   objs, triples, obj_to_img = [], [], []
+  #   obj_offset = 0
+  #   for i, sg in enumerate(scene_graphs):
+  #     # Insert dummy __image__ object and __in_image__ relationships
+  #     sg['objects'].append('__image__')
+  #     image_idx = len(sg['objects']) - 1
+  #     for j in range(image_idx):
+  #       sg['relationships'].append([j, '__in_image__', image_idx])
 
-      for obj in sg['objects']:
-        obj_idx = self.vocab['object_name_to_idx'].get(obj, None)
-        if obj_idx is None:
-          raise ValueError('Object "%s" not in vocab' % obj)
-        objs.append(obj_idx)
-        obj_to_img.append(i)
-      for s, p, o in sg['relationships']:
-        pred_idx = self.vocab['pred_name_to_idx'].get(p, None)
-        if pred_idx is None:
-          raise ValueError('Relationship "%s" not in vocab' % p)
-        triples.append([s + obj_offset, pred_idx, o + obj_offset])
-      obj_offset += len(sg['objects'])
-    device = next(self.parameters()).device
-    objs = torch.tensor(objs, dtype=torch.int64, device=device)
-    triples = torch.tensor(triples, dtype=torch.int64, device=device)
-    obj_to_img = torch.tensor(obj_to_img, dtype=torch.int64, device=device)
-    return objs, triples, obj_to_img
+  #     for obj in sg['objects']:
+  #       obj_idx = self.vocab['object_name_to_idx'].get(obj, None)
+  #       if obj_idx is None:
+  #         raise ValueError('Object "%s" not in vocab' % obj)
+  #       objs.append(obj_idx)
+  #       obj_to_img.append(i)
+  #     for s, p, o in sg['relationships']:
+  #       pred_idx = self.vocab['pred_name_to_idx'].get(p, None)
+  #       if pred_idx is None:
+  #         raise ValueError('Relationship "%s" not in vocab' % p)
+  #       triples.append([s + obj_offset, pred_idx, o + obj_offset])
+  #     obj_offset += len(sg['objects'])
+  #   device = next(self.parameters()).device
+  #   objs = torch.tensor(objs, dtype=torch.int64, device=device)
+  #   triples = torch.tensor(triples, dtype=torch.int64, device=device)
+  #   obj_to_img = torch.tensor(obj_to_img, dtype=torch.int64, device=device)
+  #   return objs, triples, obj_to_img
 
-  def forward_json(self, scene_graphs):
-    """ Convenience method that combines encode_scene_graphs and forward. """
-    objs, triples, obj_to_img = self.encode_scene_graphs(scene_graphs)
-    return self.forward(objs, triples, obj_to_img)
+  # def forward_json(self, scene_graphs):
+  #   """ Convenience method that combines encode_scene_graphs and forward. """
+  #   objs, triples, obj_to_img = self.encode_scene_graphs(scene_graphs)
+  #   return self.forward(objs, triples, obj_to_img)

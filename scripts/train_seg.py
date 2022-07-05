@@ -297,7 +297,7 @@ def build_loaders(args):
     'num_workers': args.loader_num_workers,
     'shuffle': False,
     'collate_fn': collate_fn,
-    'pin_memory': True,
+    'pin_memory': False,
   }
   train_loader = DataLoader(train_dset, **loader_kwargs)
   
@@ -355,7 +355,7 @@ def create_prompt(obj_name):
 def main(args):
   # print(args)
   if args.debug:
-    args.checkpoint_every = 1000000
+    args.checkpoint_every = 1
     args.print_every = 4
     args.batch_size = 4
     args.coco_train_image_dir = args.coco_val_image_dir

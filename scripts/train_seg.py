@@ -51,7 +51,8 @@ from tensorboardX import SummaryWriter
 torch.backends.cudnn.benchmark = True
 
 VG_DIR = os.path.expanduser('datasets/vg')
-COCO_DIR = os.path.expanduser('datasets/coco')
+# COCO_DIR = os.path.expanduser('datasets/coco')
+COCO_DIR = os.path.expanduser('/mnt/nfs-datasets-students')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='coco', choices=['vg', 'coco', 'coco_debug'])

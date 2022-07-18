@@ -41,17 +41,21 @@ class GraphTripleConv(nn.Module):
     self.input_dim = input_dim
     self.output_dim = output_dim
     self.hidden_dim = hidden_dim
-    
+  
     assert pooling in ['sum', 'avg'], 'Invalid pooling "%s"' % pooling
     self.pooling = pooling
     net1_layers = [3 * input_dim, hidden_dim, 2 * hidden_dim + output_dim]
     net1_layers = [l for l in net1_layers if l is not None]
+    # print('1', net1_layers)
     self.net1 = build_mlp(net1_layers, batch_norm=mlp_normalization)
     self.net1.apply(_init_weights)
+    # print('net1', self.net1)
     
     net2_layers = [hidden_dim, hidden_dim, output_dim]
+    # print('2', net2_layers)
     self.net2 = build_mlp(net2_layers, batch_norm=mlp_normalization)
     self.net2.apply(_init_weights)
+    # print('net2', self.net2)
 
   def forward(self, obj_vecs, pred_vecs, edges):
     """
@@ -66,6 +70,7 @@ class GraphTripleConv(nn.Module):
     - new_pred_vecs: FloatTensor of shape (T, D) giving new vectors for predicates
     """
     dtype, device = obj_vecs.dtype, obj_vecs.device
+    
     O, T = obj_vecs.size(0), pred_vecs.size(0)
     Din, H, Dout = self.input_dim, self.hidden_dim, self.output_dim
     

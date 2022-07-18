@@ -114,4 +114,3 @@ def split_graph_batch(triples, obj_data, obj_to_img, triple_to_img):
     obj_offset += o_idxs.size(0)
 
   return triples_out, obj_data_out
-

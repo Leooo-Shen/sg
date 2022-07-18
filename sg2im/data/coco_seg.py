@@ -15,16 +15,18 @@
 # limitations under the License.
 
 import json, os, random, math
+from operator import truediv
 from collections import defaultdict
 
 import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as T
-
 import numpy as np
 import PIL
 from skimage.transform import resize as imresize
 import pycocotools.mask as mask_utils
+import matplotlib.pyplot as plt
+
 
 from .utils import imagenet_preprocess, Resize
 
@@ -284,7 +286,7 @@ class CocoSceneGraphDataset(Dataset):
     boxes = torch.stack(boxes, dim=0)
     masks = torch.stack(masks, dim=0)
 
-    # box_areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+    box_areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
 
     # Compute centers of all objects
     obj_centers = []
@@ -348,8 +350,13 @@ class CocoSceneGraphDataset(Dataset):
       triples.append([i, in_image, O - 1])
     
     triples = torch.LongTensor(triples)
-    # return image, objs, boxes, masks, triples
-    return objs, masks, triples
+    
+    _masks = masks.clone()
+    for obj_cls, _mask in zip(objs, _masks):
+      _mask[_mask==1] = obj_cls 
+    seg_map = _masks.sum(dim=0, keepdim=True)
+    
+    return objs, masks, boxes, triples, seg_map
     
 
 def seg_to_mask(seg, width=1.0, height=1.0):
@@ -365,7 +372,6 @@ def seg_to_mask(seg, width=1.0, height=1.0):
     rle = seg
   return mask_utils.decode(rle)
 
-
 def coco_collate_fn(batch):
   """
   Collate function to be used when wrapping CocoSceneGraphDataset in a
@@ -379,35 +385,39 @@ def coco_collate_fn(batch):
   - obj_to_img: LongTensor of shape (O,) mapping objects to images
   - triple_to_img: LongTensor of shape (T,) mapping triples to images
   """
-  all_objs, all_masks, all_triples =  [], [], []
-  # all_obj_to_img, all_triple_to_img = [], []
+  all_objs, all_masks, all_boxes, all_triples, all_segs =  [], [], [], [], []
+  all_obj_to_img, all_triple_to_img = [], []
   obj_offset = 0
-  for i, (objs, masks, triples) in enumerate(batch):
+  for i, (objs, masks, boxes, triples, seg_maps) in enumerate(batch):
     if objs.dim() == 0 or triples.dim() == 0:
       continue
     O, T = objs.size(0), triples.size(0)
     all_objs.append(objs)
     all_masks.append(masks)
+    all_boxes.append(boxes)
+    all_segs.append(seg_maps)
     triples = triples.clone()
     triples[:, 0] += obj_offset
     triples[:, 2] += obj_offset
     all_triples.append(triples)
 
-    # all_obj_to_img.append(torch.LongTensor(O).fill_(i))
+    all_obj_to_img.append(torch.LongTensor(O).fill_(i))
     # all_triple_to_img.append(torch.LongTensor(T).fill_(i))
     obj_offset += O
 
   # all_imgs = torch.cat(all_imgs)
-  # all_boxes = torch.cat(all_boxes)
+  all_boxes = torch.cat(all_boxes)
   all_objs = torch.cat(all_objs)
   all_masks = torch.cat(all_masks)
+  all_segs = torch.cat(all_segs)
   all_triples = torch.cat(all_triples)
-  # all_obj_to_img = torch.cat(all_obj_to_img)
+  all_obj_to_img = torch.cat(all_obj_to_img)
   # all_triple_to_img = torch.cat(all_triple_to_img)
 
   # out = (all_imgs, all_objs, all_boxes, all_masks, all_triples,
   #        all_obj_to_img, all_triple_to_img)
-  out = (all_objs, all_masks, all_triples)
+
+  out = (all_objs, all_masks, all_boxes, all_triples, all_obj_to_img, all_segs)
   return out
 
     

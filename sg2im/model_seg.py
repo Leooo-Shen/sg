@@ -25,12 +25,10 @@ from sg2im.crn import RefinementNetwork
 from sg2im.layout import boxes_to_layout, masks_to_layout
 from sg2im.layers import build_mlp
 
-
 class Sg2ImModel(nn.Module):
-  def __init__(self, vocab, image_size=(64, 64), embedding_dim=64,
+  def __init__(self, vocab, image_size=(64, 64), embedding_dim=512,
                gconv_dim=128, gconv_hidden_dim=512,
                gconv_pooling='avg', gconv_num_layers=5,
-               refinement_dims=(1024, 512, 256, 128, 64),
                normalization='batch', activation='leakyrelu-0.2',
                mask_size=None, mlp_normalization='none', layout_noise_dim=0,
                **kwargs):
@@ -53,17 +51,14 @@ class Sg2ImModel(nn.Module):
     self.pred_embeddings = nn.Embedding(num_preds, embedding_dim)
   
     ## construct GCN
-    if gconv_num_layers == 0:
-      self.gconv = nn.Linear(embedding_dim, gconv_dim)
-    elif gconv_num_layers > 0:
-      gconv_kwargs = {
-        'input_dim': embedding_dim,
-        'output_dim': gconv_dim,
-        'hidden_dim': gconv_hidden_dim,
-        'pooling': gconv_pooling,
-        'mlp_normalization': mlp_normalization,
-      }
-      self.gconv = GraphTripleConv(**gconv_kwargs)
+    gconv_kwargs = {
+      'input_dim': embedding_dim,
+      'output_dim': gconv_dim,
+      'hidden_dim': gconv_hidden_dim,
+      'pooling': gconv_pooling,
+      'mlp_normalization': mlp_normalization,
+    }
+    self.gconv = GraphTripleConv(**gconv_kwargs)
 
     self.gconv_net = None
     if gconv_num_layers > 1:
@@ -76,14 +71,29 @@ class Sg2ImModel(nn.Module):
       }
       self.gconv_net = GraphTripleConvNet(**gconv_kwargs)
 
+    ## project clip features to dim=128
+    self.projection = build_mlp([512, 256, 128], batch_norm=mlp_normalization)
+    
     ## box_net predicts bounding boxes from object vectors after GCN
-    # box_net_dim = 4
-    # box_net_layers = [gconv_dim, gconv_hidden_dim, box_net_dim]
-    # self.box_net = build_mlp(box_net_layers, batch_norm=mlp_normalization)
+    box_net_dim = 4
+    box_net_layers = [gconv_dim, gconv_hidden_dim, box_net_dim]
+    self.box_net = build_mlp(box_net_layers, batch_norm=mlp_normalization)
 
     ## mask_net predicts soft segmentation masks from object vectors after GCN
     self.mask_net = self._build_mask_net(num_objs, gconv_dim, mask_size)
-
+    
+    # self.layout_to_seg = nn.Sequential(
+    #   nn.Conv2d(128, 64, kernel_size=3, stride=1, padding=1),
+    #   nn.ReLU(),
+    #   nn.BatchNorm2d(64),
+    #   nn.Conv2d(64, 32, kernel_size=3, stride=1, padding=1),
+    #   nn.ReLU(),
+    #   nn.BatchNorm2d(32),
+    #   nn.Conv2d(32, 16, kernel_size=3, stride=1, padding=1),
+    #   nn.ReLU(),
+    #   nn.BatchNorm2d(16),
+    #   nn.Conv2d(16, 1, kernel_size=1, stride=1, padding=0),
+    # )
     # rel_aux_layers = [2 * embedding_dim + 8, gconv_hidden_dim, num_preds]
     # self.rel_aux_net = build_mlp(rel_aux_layers, batch_norm=mlp_normalization)
 
@@ -103,7 +113,8 @@ class Sg2ImModel(nn.Module):
     return nn.Sequential(*layers)
 
   
-  def forward(self, objs, triples, obj_to_img=None, clip_features=None):
+  def forward(self, objs, triples, obj_to_img=None, 
+              boxes_gt=None, masks_gt= None, clip_features=None):
     """
     Required Inputs:
     - objs: LongTensor of shape (O,) giving categories for all objects
@@ -133,27 +144,21 @@ class Sg2ImModel(nn.Module):
     if clip_features is None:
       obj_vecs = self.obj_embeddings(objs)  # torch.Size([len(objs), 512])
     else:
-      obj_vecs = clip_features
+      obj_vecs = self.projection(clip_features)
+      
     pred_vecs = self.pred_embeddings(p)
+    obj_vecs, pred_vecs = self.gconv(obj_vecs, pred_vecs, edges)
     
-    # print(obj_vecs.shape)
-    # print(len(objs))
-    
-    ## GCN calculation
-    if isinstance(self.gconv, nn.Linear):
-      obj_vecs = self.gconv(obj_vecs)
-    else:
-      obj_vecs, pred_vecs = self.gconv(obj_vecs, pred_vecs, edges)
     if self.gconv_net is not None:
       obj_vecs, pred_vecs = self.gconv_net(obj_vecs, pred_vecs, edges)
     
     ## use object vectors to predict bounding boxes
-    # boxes_pred = self.box_net(obj_vecs)
+    boxes_pred = self.box_net(obj_vecs)
 
-    ## use object vectors to predict segmentation masks
-    mask_scores = self.mask_net(obj_vecs.view(O, -1, 1, 1))
-    masks_pred = mask_scores.squeeze(1).sigmoid()
-    
+    ## use object vectors to predict binary object-wise masks
+    mask_scores = self.mask_net(obj_vecs.view(O, -1, 1, 1))  # [O, 1, 64, 64]
+    masks_pred = mask_scores.squeeze(1).sigmoid()  # [O, 64, 64] 
+
     
     # s_boxes, o_boxes = boxes_pred[s], boxes_pred[o]
     # s_vecs, o_vecs = obj_vecs_orig[s], obj_vecs_orig[o]
@@ -162,14 +167,15 @@ class Sg2ImModel(nn.Module):
 
     # H, W = self.image_size
     # layout_boxes = boxes_pred if boxes_gt is None else boxes_gt
- 
-    # if masks_pred is None:
-    #   layout = boxes_to_layout(obj_vecs, layout_boxes, obj_to_img, H, W)
-    # else:
     # layout_masks = masks_pred if masks_gt is None else masks_gt
-    # layout = masks_to_layout(obj_vecs, layout_boxes, layout_masks,
-    #                            obj_to_img, H, W)
-
+ 
+    # # if masks_pred is None:
+    # #   layout = boxes_to_layout(obj_vecs, layout_boxes, obj_to_img, H, W)
+    # # else:
+    # layout = masks_to_layout(obj_vecs, layout_boxes, layout_masks, 
+    #                          obj_to_img, H, W)   # [batch, 128, 64, 64]
+    # seg_pred = self.layout_to_seg(layout)
+    
     # if self.layout_noise_dim > 0:
     #   N, C, H, W = layout.size()
     #   noise_shape = (N, self.layout_noise_dim, H, W)
@@ -177,7 +183,7 @@ class Sg2ImModel(nn.Module):
     #                              device=layout.device)
     #   layout = torch.cat([layout, layout_noise], dim=1)
 
-    return masks_pred
+    return boxes_pred, masks_pred
 
   # def encode_scene_graphs(self, scene_graphs):
   #   """

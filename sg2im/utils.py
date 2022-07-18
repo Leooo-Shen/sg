@@ -90,3 +90,14 @@ class LossManager(object):
   def items(self):
     return self.all_losses.items()
 
+
+def dice_loss(prediction, ground_truth):
+
+  smooth = 1.
+  pred_flat = prediction.view(-1)
+  gt_flat = ground_truth.view(-1)
+  intersection = (pred_flat * gt_flat).sum()
+  
+  loss = 1 - ((2. * intersection + smooth) /
+            (pred_flat.sum() + gt_flat.sum() + smooth))
+  return loss

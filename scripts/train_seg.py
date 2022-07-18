@@ -54,8 +54,8 @@ from tensorboardX import SummaryWriter
 torch.backends.cudnn.benchmark = True
 
 VG_DIR = os.path.expanduser('datasets/vg')
-# COCO_DIR = os.path.expanduser('datasets/coco')
-COCO_DIR = os.path.expanduser('/mnt/nfs-datasets-students/coco')
+COCO_DIR = os.path.expanduser('datasets/coco')
+# COCO_DIR = os.path.expanduser('/mnt/nfs-datasets-students/coco')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='coco', choices=['vg', 'coco', 'coco_debug'])
@@ -344,7 +344,6 @@ def sum_masks(masks, objs):
   obj_split = torch.split(objs, diff)
   mask_split = torch.split(masks, diff)
   
-
   mask_sum = []
   for m, obj in zip(mask_split, obj_split):
     binary_m = (m>0.5).float()   # binaralize
@@ -357,7 +356,7 @@ def sum_masks(masks, objs):
 def main(args):
   # print(args)
   if args.debug:
-    args.checkpoint_every = 5
+    args.checkpoint_every = 10
     args.print_every = 5
     args.batch_size = 8
     args.coco_train_image_dir = args.coco_val_image_dir
@@ -420,8 +419,7 @@ def main(args):
                             boxes_gt=boxes, clip_features=clip_embeddings)
           
           simple_sum = sum_masks(masks_pred, objs) # [batch, 64, 64]      
-          print(simple_sum.shape, seg_maps.shape)
-          
+
           loss_mask = F.binary_cross_entropy(masks_pred, masks.float())
           loss_bbox = F.mse_loss(boxes_pred, boxes)
           criterian = nn.L1Loss()
@@ -450,7 +448,7 @@ def main(args):
           writer.add_images('seg_gt', seg_maps.unsqueeze(1), t) 
           
         # save checkpoints 
-        if t % args.checkpoint_every == 1:
+        if t % args.checkpoint_every == 0:
           print('checking on val')
           loss, loss_mask, loss_bbox, loss_seg = check_model(val_loader, model, clip_features)
           print('val_loss: %.4f '%  loss)
@@ -468,16 +466,16 @@ def main(args):
     
     ## overfit mode      
     else: 
-      unet3 = pytorch_models.Unet(
-          in_channels=1,                  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
-          classes=1,                      # model output channels (number of classes in your dataset)
-          encoder_depth=3,                # Amount of down- and upsampling of the Unet
-          decoder_channels=(64, 32,16),   # Amount of channels
-          encoder_weights = None,         # Model does not download pretrained weights
-          # activation = 'softmax'           # Activation function to apply after final convolution       
-          )
+      # unet3 = pytorch_models.Unet(
+      #     in_channels=1,                  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
+      #     classes=1,                      # model output channels (number of classes in your dataset)
+      #     encoder_depth=3,                # Amount of down- and upsampling of the Unet
+      #     decoder_channels=(64, 32,16),   # Amount of channels
+      #     encoder_weights = None,         # Model does not download pretrained weights
+      #     # activation = 'softmax'           # Activation function to apply after final convolution       
+      #     )
     
-      unet3.to(device)
+      # unet3.to(device)
       overfit_batch = [tensor.to(device) for tensor in overfit_batch]
       objs, masks, boxes, triples, obj_to_img, seg_maps = overfit_batch
       for t in range(1000000):
@@ -515,7 +513,10 @@ def main(args):
           writer.add_images('masks', masks.unsqueeze(1), t) 
           writer.add_images('simple_sum', simple_sum.unsqueeze(1), t) 
           writer.add_images('seg_gt', seg_maps.unsqueeze(1), t) 
+          # writer.add_images('seg_pred', seg_pred, t) 
           
+        
+
 
 if __name__ == '__main__':
   args = parser.parse_args()

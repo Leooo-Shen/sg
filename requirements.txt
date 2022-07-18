@@ -8,3 +8,4 @@ matplotlib
 scikit-image
 pycocotools
 tensorboardX
+segmentation_models_pytorch

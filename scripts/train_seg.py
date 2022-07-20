@@ -491,7 +491,7 @@ def main(args):
         loss_bbox = F.mse_loss(boxes_pred, boxes)
         criterian = nn.L1Loss()
         loss_seg = criterian(simple_sum, seg_maps)
-        loss = loss_mask  + loss_bbox + loss_seg * 0.1
+        loss = loss_mask  + loss_bbox + loss_seg * 0.005
             
         if not math.isfinite(loss.item()):
           print('WARNING: Got loss = NaN, not backpropping')

@@ -458,8 +458,7 @@ def main(args):
       if t == args.eval_mode_after:
         print('switching to eval mode')
         model.eval()
-        # optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-           
+        
       # train
       t += 1
       batch = [tensor.to(device) for tensor in batch]

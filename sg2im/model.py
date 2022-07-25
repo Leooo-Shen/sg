@@ -148,7 +148,7 @@ class Sg2ImModel(nn.Module):
     if clip_features is None:
       obj_vecs = self.obj_embeddings(objs)  # torch.Size([len(objs), 512])
     else:
-      obj_vecs = clip_features.float()
+      obj_vecs = clip_features
     obj_vecs_orig = obj_vecs
     pred_vecs = self.pred_embeddings(p)
     

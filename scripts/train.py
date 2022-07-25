@@ -15,7 +15,6 @@
 # limitations under the License.
 
 
-from asyncore import write
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -44,17 +43,20 @@ from sg2im.metrics import jaccard
 from sg2im.model import Sg2ImModel
 from sg2im.utils import int_tuple, float_tuple, str_tuple
 from sg2im.utils import timeit, bool_flag, LossManager
+from sg2im.data.utils import imagenet_deprocess_batch
+
+import matplotlib.pyplot as plt
 
 import clip
 from tensorboardX import SummaryWriter
-
-# torch.backends.cudnn.benchmark = True
+from torch.cuda.amp import autocast, GradScaler
+torch.backends.cudnn.benchmark = True
 
 VG_DIR = os.path.expanduser('datasets/vg')
 COCO_DIR = os.path.expanduser('datasets/coco')
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', default='vg', choices=['vg', 'coco'])
+parser.add_argument('--dataset', default='coco', choices=['vg', 'coco'])
 
 # Optimization hyperparameters
 parser.add_argument('--batch_size', default=32, type=int)
@@ -306,7 +308,7 @@ def build_loaders(args):
   return vocab, train_loader, val_loader
 
 
-def check_model(args, t, loader, model):
+def check_model(args, t, loader, model, clip_features):
   # float_dtype = torch.cuda.FloatTensor
   # long_dtype = torch.cuda.LongTensor
   num_samples = 0
@@ -322,10 +324,11 @@ def check_model(args, t, loader, model):
       elif len(batch) == 7:
         imgs, objs, boxes, masks, triples, obj_to_img, triple_to_img = batch
       predicates = triples[:, 1] 
-
+      
       # Run the model as it has been run during training
+      clip_embeddings = clip_features[objs]
       model_masks = masks
-      model_out = model(objs, triples, obj_to_img, boxes_gt=boxes, masks_gt=model_masks)
+      model_out = model(objs, triples, obj_to_img, boxes_gt=boxes, masks_gt=model_masks, clip_features=clip_embeddings)
       imgs_pred, boxes_pred, masks_pred, predicate_scores = model_out
 
       skip_pixel_loss = False
@@ -380,7 +383,7 @@ def check_model(args, t, loader, model):
   #   'masks_pred': masks_pred_to_store
   # }
   # out = [mean_losses, samples, batch_data, avg_iou]
-  out = [mean_losses, avg_iou]
+  out = [mean_losses, avg_iou, imgs, imgs_pred]
 
   return tuple(out)
 
@@ -420,13 +423,16 @@ def create_prompt(obj_name):
   
 def main(args):
   if args.debug:
-    args.checkpoint_every = 1
-    args.print_every = 1
-    args.batch_size = 4
+    args.checkpoint_every = 10
+    args.print_every = 5
+    args.batch_size = 8
+    args.coco_train_image_dir = args.coco_val_image_dir
+    args.coco_train_instances_json = args.coco_val_instances_json
+    args.coco_train_stuff_json = args.coco_val_stuff_json
     
   # print(args)
   device = "cuda" if torch.cuda.is_available() else "cpu"
-  writer = SummaryWriter("runs/sg2im_clip")
+  writer = SummaryWriter("runs")
   
   if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir)
@@ -458,14 +464,20 @@ def main(args):
   img_discriminator = nn.DataParallel(img_discriminator, device_ids=ids)
   
   gan_g_loss, gan_d_loss = get_gan_losses(args.gan_loss_type)
-  clip_model, _ = clip.load("ViT-B/32", device=device, download_root='./pretrained_weights')
-  clip_model.eval()
-    
-  for param in clip_model.parameters():
-    param.requires_grad = False
   
-  clip_model = nn.DataParallel(clip_model, device_ids=ids)
-  print('[*] CLIP model load successfully!')
+  ## clip features
+  clip_model, _ = clip.load("ViT-B/32", device='cuda:0', download_root='./pretrained_weights')
+  clip_model.eval()
+  prompt = []
+  for obj_name in vocab["object_idx_to_name"]:
+    prompt.append(create_prompt(obj_name))
+  text = clip.tokenize(prompt).to(device)
+  
+  with torch.no_grad():
+    print('[*] Generating object features with CLIP...')
+    clip_features = clip_model.encode_text(text).float()
+  print('[*] Features successfully generated for %d objects' % clip_features.shape[0])
+
   
   if obj_discriminator is not None:
     obj_discriminator.type(float_dtype)
@@ -481,6 +493,8 @@ def main(args):
     optimizer_d_img = torch.optim.Adam(img_discriminator.parameters(),
                                        lr=args.learning_rate)
 
+  scaler = GradScaler()
+
   ## training
   t, epoch = 0, 0
   while True:
@@ -490,11 +504,6 @@ def main(args):
     print('Starting epoch %d' % epoch)
     
     for batch in train_loader:
-      
-      # if t == args.eval_mode_after:
-      #   print('switching to eval mode')
-      #   model.eval()
-        
       t += 1
       batch = [tensor.cuda() for tensor in batch]
       
@@ -508,50 +517,47 @@ def main(args):
         assert False
       predicates = triples[:, 1]
 
+      ## save images debug
+      # print(de_imgs.shape)
+      # for i in range(de_imgs.shape[0]):
+      #   plt.imsave('./images/%d.png'%i, de_imgs[i].permute(1,2,0).cpu().numpy())
+      # exit()
       ## model forward
-      with timeit('forward', args.timing):
+      with autocast():
         model_boxes = boxes
         model_masks = masks 
         prompt = []
 
         # print(vocab["object_idx_to_name"])
-        for obj_idx in objs.cpu().detach().numpy():
-          obj_name = vocab["object_idx_to_name"][obj_idx]
-          prompt.append(create_prompt(obj_name))
           
-        text = clip.tokenize(prompt).to(objs.device)
-        with torch.no_grad():
-          clip_features = clip_model.module.encode_text(text)
-          
+        clip_embeddings = clip_features[objs]
         model_out = model(objs, triples, obj_to_img,
-                          boxes_gt=model_boxes, masks_gt=model_masks, clip_features=clip_features)
+                          boxes_gt=model_boxes, masks_gt=model_masks, clip_features=clip_embeddings)
         imgs_pred, boxes_pred, masks_pred, predicate_scores = model_out
       
-        
-        ## get losses
-        with timeit('loss', args.timing):
-          # Skip the pixel loss if using GT boxes
-          skip_pixel_loss = (model_boxes is None)
-          total_loss, losses =  calculate_model_losses(
-                                  args, skip_pixel_loss, model, imgs, imgs_pred,
-                                  boxes, boxes_pred, masks, masks_pred,
-                                  predicates, predicate_scores)
 
-      ## object discriminator loss
-      if obj_discriminator is not None:
-        scores_fake, ac_loss = obj_discriminator(imgs_pred, objs, boxes, obj_to_img)
-        total_loss = add_loss(total_loss, ac_loss, losses, 'ac_loss',
-                              args.ac_loss_weight)
-        weight = args.discriminator_loss_weight * args.d_obj_weight
-        total_loss = add_loss(total_loss, gan_g_loss(scores_fake), losses,
-                              'g_gan_obj_loss', weight)
+        # Skip the pixel loss if using GT boxes
+        skip_pixel_loss = (model_boxes is None)
+        total_loss, losses =  calculate_model_losses(
+                                args, skip_pixel_loss, model, imgs, imgs_pred,
+                                boxes, boxes_pred, masks, masks_pred,
+                                predicates, predicate_scores)
 
-      ## image discriminator loss
-      if img_discriminator is not None:
-        scores_fake = img_discriminator(imgs_pred)
-        weight = args.discriminator_loss_weight * args.d_img_weight
-        total_loss = add_loss(total_loss, gan_g_loss(scores_fake), losses,
-                              'g_gan_img_loss', weight)
+        ## object discriminator loss
+        if obj_discriminator is not None:
+          scores_fake, ac_loss = obj_discriminator(imgs_pred, objs, boxes, obj_to_img)
+          total_loss = add_loss(total_loss, ac_loss, losses, 'ac_loss',
+                                args.ac_loss_weight)
+          weight = args.discriminator_loss_weight * args.d_obj_weight
+          total_loss = add_loss(total_loss, gan_g_loss(scores_fake), losses,
+                                'g_gan_obj_loss', weight)
+
+        ## image discriminator loss
+        if img_discriminator is not None:
+          scores_fake = img_discriminator(imgs_pred)
+          weight = args.discriminator_loss_weight * args.d_img_weight
+          total_loss = add_loss(total_loss, gan_g_loss(scores_fake), losses,
+                                'g_gan_img_loss', weight)
 
       losses['total_loss'] = total_loss.item()
       if not math.isfinite(losses['total_loss']):
@@ -560,10 +566,13 @@ def main(args):
 
       ## backward
       optimizer.zero_grad()
+      scaler.scale(total_loss).backward()
+      scaler.step(optimizer)
+      scaler.update()
       
-      with timeit('backward', args.timing):
-        total_loss.backward()
-      optimizer.step()
+      # total_loss.backward()
+      # optimizer.step()
+      
       total_loss_d = None
       ac_loss_real = None
       ac_loss_fake = None
@@ -571,76 +580,91 @@ def main(args):
       
       ## train object discriminator
       if obj_discriminator is not None:
-        d_obj_losses = LossManager()
-        imgs_fake = imgs_pred.detach()
-        scores_fake, ac_loss_fake = obj_discriminator(imgs_fake, objs, boxes, obj_to_img)
-        scores_real, ac_loss_real = obj_discriminator(imgs, objs, boxes, obj_to_img)
+        with autocast():
+          d_obj_losses = LossManager()
+          imgs_fake = imgs_pred.detach()
+          scores_fake, ac_loss_fake = obj_discriminator(imgs_fake, objs, boxes, obj_to_img)
+          scores_real, ac_loss_real = obj_discriminator(imgs, objs, boxes, obj_to_img)
 
-        d_obj_gan_loss = gan_d_loss(scores_real, scores_fake)
-        d_obj_losses.add_loss(d_obj_gan_loss, 'd_obj_gan_loss')
-        d_obj_losses.add_loss(ac_loss_real, 'd_ac_loss_real')
-        d_obj_losses.add_loss(ac_loss_fake, 'd_ac_loss_fake')
-
+          d_obj_gan_loss = gan_d_loss(scores_real, scores_fake)
+          d_obj_losses.add_loss(d_obj_gan_loss, 'd_obj_gan_loss')
+          d_obj_losses.add_loss(ac_loss_real, 'd_ac_loss_real')
+          d_obj_losses.add_loss(ac_loss_fake, 'd_ac_loss_fake')
+        # d_obj_losses.total_loss.backward()
+        # optimizer_d_obj.step()
         optimizer_d_obj.zero_grad()
-        d_obj_losses.total_loss.backward()
-        optimizer_d_obj.step()
+        scaler.scale(d_obj_losses.total_loss).backward()
+        scaler.step(optimizer_d_obj)
+        scaler.update()
 
       ## train image discriminator
       if img_discriminator is not None:
-        d_img_losses = LossManager()
-        imgs_fake = imgs_pred.detach()
-        scores_fake = img_discriminator(imgs_fake)
-        scores_real = img_discriminator(imgs)
-
-        d_img_gan_loss = gan_d_loss(scores_real, scores_fake)
-        d_img_losses.add_loss(d_img_gan_loss, 'd_img_gan_loss')
-        
+        with autocast():
+          d_img_losses = LossManager()
+          imgs_fake = imgs_pred.detach()
+          scores_fake = img_discriminator(imgs_fake)
+          scores_real = img_discriminator(imgs)
+          d_img_gan_loss = gan_d_loss(scores_real, scores_fake)
+          d_img_losses.add_loss(d_img_gan_loss, 'd_img_gan_loss')
+        # d_img_losses.total_loss.backward()
+        # optimizer_d_img.step()
+      
         optimizer_d_img.zero_grad()
-        d_img_losses.total_loss.backward()
-        optimizer_d_img.step()
-
+        scaler.scale(d_img_losses.total_loss).backward()
+        scaler.step(optimizer_d_img)
+        scaler.update()
+        
       ## output printings
       if t % args.print_every == 0:
         print('t = %d / %d' % (t, args.num_iterations))
-        
-        writer.add_images('imgs_pred', imgs_pred, t) 
-        writer.add_images('imgs_gt', imgs, t) 
+
+        de_imgs = imagenet_deprocess_batch(imgs.float())
+        de_pred = imagenet_deprocess_batch(imgs_pred.float())
+        writer.add_images('imgs_gt', de_imgs, t)
+        writer.add_images('imgs_pred', de_pred, t) 
         
         for name, val in losses.items():
           print(' G [%s]: %.4f' % (name, val))
-        writer.add_scalars('losses', losses, t)
+        writer.add_scalars('G_loss', losses, t)
 
         if obj_discriminator is not None:
           for name, val in d_obj_losses.items():
             print(' D_obj [%s]: %.4f' % (name, val))
             # checkpoint['d_losses'][name].append(val)
-          writer.add_scalars('d_obj_losses', d_obj_losses, t)
+          writer.add_scalars('D_obj_loss', d_obj_losses, t)
           
         if img_discriminator is not None:
           for name, val in d_img_losses.items():
             print(' D_img [%s]: %.4f' % (name, val))
             # checkpoint['d_losses'][name].append(val)
-          writer.add_scalars('d_img_losses', d_img_losses, t)
+          writer.add_scalars('D_img_loss', d_img_losses, t)
           
       ## save checkpoints and print
       if t % args.checkpoint_every == 0:
-        print('checking on train')
-        t_losses, t_avg_iou = check_model(args, t, train_loader, model)
-        print('train_iou: %.4f '%  t_avg_iou)
+        # print('checking on train')
+        # t_losses, t_avg_iou = check_model(args, t, train_loader, model)
+        # print('train_iou: %.4f '%  t_avg_iou)
         
         print('checking on val')
-        val_losses, val_avg_iou = check_model(args, t, val_loader, model)
-        print('val_iou: %.4f '%  val_avg_iou)
+        model.eval()
         
-        writer.add_scalars('train_avg_loss', t_losses, t)
+        val_losses, val_avg_iou, val_imgs, val_imgs_pred = check_model(args, t, val_loader, model, clip_features)
+        for name, val in val_losses.items():
+            print(' Val [%s]: %.4f' % (name, val))
+        print(' Val_iou: %.4f '%  val_avg_iou)   
+        de_val_imgs = imagenet_deprocess_batch(val_imgs.float())
+        de_val_pred = imagenet_deprocess_batch(val_imgs_pred.float())
+        writer.add_images('val_imgs_gt', de_val_imgs, t)
+        writer.add_images('val_imgs_pred', de_val_pred, t) 
         writer.add_scalars('val_avg_loss', val_losses, t)
-        writer.add_scalar('train_iou', t_avg_iou, t)
         writer.add_scalar('val_iou', val_avg_iou, t)
 
-        checkpoint_path = os.path.join(args.output_dir,'%s_%s_it%d_loss%.4f_tiou%.4f_viou%.4f.pt' 
-                                       % (args.checkpoint_name, args.dataset, t, losses['total_loss'], t_avg_iou, val_avg_iou))
+        checkpoint_path = os.path.join(args.output_dir,'%s_%s_it%d_loss%.4f_viou%.4f.pt' 
+                                       % (args.checkpoint_name, args.dataset, t, losses['total_loss'], val_avg_iou))
         print('saving checkpoints to:', checkpoint_path)
         torch.save(model.module.state_dict(), checkpoint_path)
+        
+        model.train()
 
 
 if __name__ == '__main__':

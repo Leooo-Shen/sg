@@ -54,8 +54,8 @@ from tensorboardX import SummaryWriter
 torch.backends.cudnn.benchmark = True
 
 VG_DIR = os.path.expanduser('datasets/vg')
-COCO_DIR = os.path.expanduser('datasets/coco')
-# COCO_DIR = os.path.expanduser('/mnt/nfs-datasets-students/coco')
+# COCO_DIR = os.path.expanduser('datasets/coco')
+COCO_DIR = os.path.expanduser('/mnt/nfs-datasets-students/coco')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='coco', choices=['vg', 'coco', 'coco_debug'])
@@ -491,7 +491,7 @@ def main(args):
         loss_bbox = F.mse_loss(boxes_pred, boxes)
         criterian = nn.L1Loss()
         loss_seg = criterian(simple_sum, seg_maps)
-        loss = loss_mask  + loss_bbox + loss_seg * 0.1
+        loss = loss_mask  + loss_bbox + loss_seg * 0.005
             
         if not math.isfinite(loss.item()):
           print('WARNING: Got loss = NaN, not backpropping')

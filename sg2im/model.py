@@ -131,10 +131,14 @@ class Sg2ImModel(nn.Module):
     - boxes_gt: FloatTensor of shape (O, 4) giving boxes to use for computing
       the spatial layout; if not given then use predicted boxes.
     """
+    # print(triples.size)
 
     O, T = objs.size(0), triples.size(0)
     s, p, o = triples.chunk(3, dim=1)           # All have shape (T, 1)
+    # print(s.shape, o.shape)
+
     s, p, o = [x.squeeze(1) for x in [s, p, o]] # Now have shape (T,)
+    
     edges = torch.stack([s, o], dim=1)          # Shape is (T, 2)
   
     if obj_to_img is None:

@@ -14,15 +14,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-COCO_DIR=datasets/coco
+COCO_download=/root/autodl-tmp
+COCO_DIR=/root/autodl-tmp/datasets/coco
 mkdir -p $COCO_DIR
 
-wget http://images.cocodataset.org/annotations/annotations_trainval2017.zip -O $COCO_DIR/annotations_trainval2017.zip
-wget http://images.cocodataset.org/annotations/stuff_annotations_trainval2017.zip -O $COCO_DIR/stuff_annotations_trainval2017.zip
-wget http://images.cocodataset.org/zips/train2017.zip -O $COCO_DIR/train2017.zip
-wget http://images.cocodataset.org/zips/val2017.zip -O $COCO_DIR/val2017.zip
+# wget http://images.cocodataset.org/annotations/annotations_trainval2017.zip -O $COCO_DIR/annotations_trainval2017.zip
+# wget http://images.cocodataset.org/annotations/stuff_annotations_trainval2017.zip -O $COCO_DIR/stuff_annotations_trainval2017.zip
+# wget http://images.cocodataset.org/zips/train2017.zip -O $COCO_DIR/train2017.zip
+# wget http://images.cocodataset.org/zips/val2017.zip -O $COCO_DIR/val2017.zip
 
-unzip $COCO_DIR/annotations_trainval2017.zip -d $COCO_DIR
-unzip $COCO_DIR/stuff_annotations_trainval2017.zip -d $COCO_DIR
-unzip $COCO_DIR/train2017.zip -d $COCO_DIR/images
-unzip $COCO_DIR/val2017.zip -d $COCO_DIR/images
+# unzip $COCO_download/annotations_trainval2017.zip -d $COCO_DIR
+unzip $COCO_download/stuff_annotations_trainval2017.zip -d $COCO_DIR
+# unzip $COCO_download/val2017.zip -d $COCO_DIR/images
+# rm $COCO_download/annotations_trainval2017.zip
+# rm $COCO_download/stuff_annotations_trainval2017.zip
+# rm $COCO_download/val2017.zip
+
+# unzip $COCO_download/train2017.zip -d ~/autodl-tmp/datasets/coco/images

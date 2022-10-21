@@ -53,8 +53,8 @@ from torch.cuda.amp import autocast, GradScaler
 torch.backends.cudnn.benchmark = True
 
 VG_DIR = os.path.expanduser('datasets/vg')
-# COCO_DIR = os.path.expanduser('datasets/coco')
-COCO_DIR = '/root/autodl-tmp/datasets/coco'
+COCO_DIR = os.path.expanduser('datasets/coco')
+# COCO_DIR = '/root/autodl-tmp/datasets/coco'
 
 
 parser = argparse.ArgumentParser()
@@ -148,7 +148,7 @@ parser.add_argument('--d_img_weight', default=1.0, type=float) # multiplied by d
 parser.add_argument('--print_every', default=50, type=int)
 parser.add_argument('--checkpoint_every', default=1000, type=int)
 parser.add_argument('--timing', default=False, type=bool_flag)
-parser.add_argument('--output_dir', default='/root/autodl-tmp/checkpoints/SG2IM_CLIP')
+parser.add_argument('--output_dir', default='./checkpoints/SG2IM_CLIP')
 parser.add_argument('--checkpoint_name', default='sg2im_clip')
 parser.add_argument('--restore_from_checkpoint', default=False, type=bool)
 
@@ -447,26 +447,26 @@ def main(args):
   float_dtype = torch.cuda.FloatTensor
   long_dtype = torch.cuda.LongTensor
 
-  # vocab, train_loader, val_loader = build_loaders(args)
-  ## save data as tensor
-  # if not os.path.exists('/root/autodl-tmp/tensors'):
-  #   os.makedirs('/root/autodl-tmp/tensors/val')
-  #   os.makedirs('/root/autodl-tmp/tensors/train')
+#   vocab, train_loader, val_loader = build_loaders(args)
+#   # save data as tensor
+#   if not os.path.exists('./datasets/tensors'):
+#     os.makedirs('./datasets/tensors/val')
+#     os.makedirs('./datasets/tensors/train')
 
-  # print('saving transformed tensor data...')
-  # for i, batch in enumerate(train_loader):
-  #   torch.save(batch, '/root/autodl-tmp/tensors/train/transformed{}'.format(i))
-  #   print('%d / %d' %(i, len(train_loader)))
+#   print('saving transformed tensor data...')
+#   for i, batch in enumerate(train_loader):
+#     torch.save(batch, './datasets/tensors/train/transformed{}'.format(i))
+#     print('%d / %d' %(i, len(train_loader)))
 
-  # for i, batch in enumerate(val_loader):
-  #   print(len(batch))
-  #   # torch.save(batch, '/root/autodl-tmp/tensors/val/transformed{}'.format(i))
-  #   print('%d / %d' %(i, len(val_loader)))
-  # exit()
+#   for i, batch in enumerate(val_loader):
+#     print(len(batch))
+#     # torch.save(batch, '/root/autodl-tmp/tensors/val/transformed{}'.format(i))
+#     print('%d / %d' %(i, len(val_loader)))
+#   exit()
 
   vocab, _, _ = build_coco_dsets(args)
-  train_tensor = TransformedDataset('/root/autodl-tmp/tensors/train')
-  val_tensor = TransformedDataset('/root/autodl-tmp/tensors/val')
+  train_tensor = TransformedDataset('./datasets/tensors/train')
+  val_tensor = TransformedDataset('./datasets/tensors/val')
   loader_kwargs = {
     'batch_size': args.batch_size,
     'num_workers': args.loader_num_workers,
@@ -520,10 +520,10 @@ def main(args):
                                        lr=args.learning_rate)
 
   scaler = GradScaler()
-  ckp_path = '/root/autodl-tmp/checkpoints/SG2IM_CLIP/sg2im_clip_coco_it110000_loss0.6102_viou0.4843.pt'
-  state_dict = torch.load(ckp_path)
-  model.load_state_dict(state_dict)
-  print('[*] Successfully load model: ', ckp_path)
+#   ckp_path = '/root/autodl-tmp/checkpoints/SG2IM_CLIP/sg2im_clip_coco_it110000_loss0.6102_viou0.4843.pt'
+#   state_dict = torch.load(ckp_path)
+#   model.load_state_dict(state_dict)
+#   print('[*] Successfully load model: ', ckp_path)
 
   ## training
   t, epoch = 110000, 0
